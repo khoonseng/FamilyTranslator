@@ -1,0 +1,43 @@
+# Secrets (keep .env.example with variable names only)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+*-credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+coverage/
+*.log
+
+# Bake-off outputs (audio clips, recordings, results)
+bakeoff/out/
+bakeoff/recordings/
+*.wav
+*.opus
+*.mp3
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# Claude Code local settings
+.claude/settings.local.json
