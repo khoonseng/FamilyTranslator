@@ -1,0 +1,80 @@
+# Bake-off configuration. Every model ID, endpoint, reasoning setting and voice lives here,
+# never in code (hard rule 6). ${VAR} is replaced from the environment / bakeoff/.env.
+# Values marked "verify" are checked by 00_smoke.py before any bench runs.
+
+gcp:
+  project: ${GCP_PROJECT}
+
+stt:
+  google:
+    # Chirp 3 runs only in the `us` and `eu` multi-regions. Sync Recognize only (hard rule 14).
+    location: us
+    endpoint: us-speech.googleapis.com
+    model: chirp_3
+    phrase_boost: 10            # glossary phrase biasing strength (verify range in smoke)
+  openai:
+    models: [gpt-4o-mini-transcribe, gpt-4o-transcribe]
+
+tts:
+  google:
+    endpoint: texttospeech.googleapis.com   # verify; a `us-` regional endpoint may be preferred
+    yue_language: yue-HK
+    cmn_language: cmn-CN
+    sample_rate_hz: 24000
+    # Filled in after 00_smoke.py lists the real voices.
+    yue_voices: []
+    cmn_voices: []
+
+mt:
+  google:
+    # Cloud Translation v3. Glossaries are regional, so use a region, not `global`.
+    location: us-central1
+    glossary_id: null           # set after the glossary is uploaded (step 4)
+
+# Translation LLMs: ONE OpenAI-compatible client, one entry per provider/model/setting.
+# `params` is sent as-is in the request body, so provider-specific reasoning switches
+# stay in config. auth: google = service-account token (Vertex), else env var named.
+llm:
+  providers:
+    vertex:
+      base_url: https://aiplatform.googleapis.com/v1/projects/${GCP_PROJECT}/locations/global/endpoints/openapi
+      auth: google
+      json_mode: json_object
+    groq:
+      base_url: https://api.groq.com/openai/v1
+      auth: GROQ_API_KEY
+      json_mode: json_object
+  configs:
+    gemini-off:
+      provider: vertex
+      model: google/gemini-3.6-flash          # verify exact ID on Vertex
+      params: {reasoning_effort: none}        # verify: Gemini 3.x may only allow `minimal`
+    gemini-low:
+      provider: vertex
+      model: google/gemini-3.6-flash
+      params: {reasoning_effort: low}
+    qwen-off:
+      provider: groq
+      model: qwen/qwen3.8-27b
+      params: {reasoning_effort: none}
+    qwen-default:
+      provider: groq
+      model: qwen/qwen3.8-27b
+      params: {reasoning_effort: default, reasoning_format: hidden}
+    gptoss-low:
+      provider: groq
+      model: openai/gpt-oss-120b
+      params: {reasoning_effort: low, include_reasoning: false}
+  timeout_s: 20
+  temperature: 0.2
+  context_sentences: 2          # previous source sentences sent as context (hard rule 7)
+
+scoring:
+  # Colloquial Cantonese markers (unified list, 2026-10-14).
+  colloquial_markers: [佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢]
+  # Formal written-Chinese forms that colloquial Cantonese replaces (他→佢, 的→嘅, 是→係 ...).
+  # Matched longest first, so 他們 counts once, not as 他 + 們.
+  formal_markers: [他們, 她們, 他, 她, 它, 們, 的, 是, 在, 沒有, 沒, 這, 那, 什麼, 怎麼, 不]
+  # Common words that contain a formal marker but are normal in spoken Cantonese too;
+  # removed before counting formal markers.
+  formal_exceptions: [不過, 不同, 不少, 不錯, 不斷, 不如, 不得了, 目的, 的士, 實在, 存在]
