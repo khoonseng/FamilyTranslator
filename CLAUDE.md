@@ -161,6 +161,7 @@ AI providers (all must meet hard rule 14; the week-1 bake-off confirms or promot
 | --- | --- | --- |
 | STT | Google Speech-to-Text V2 `chirp_3` (sync): `cmn-Hans-CN`, `yue-Hant-HK`, `en-US`; glossary as phrase biasing | OpenAI `gpt-4o-mini-transcribe` (bake-off also tries `gpt-4o-transcribe` on accented Mandarin) |
 | Translation LLM | Chosen by 15 Nov (rule below): Gemini 3.6 Flash on Vertex AI, or Groq | The other one. Groq candidates: `qwen/qwen3.8-27b` (Preview), `openai/gpt-oss-120b` (Production) |
+| Translation, bake-off candidate | Google Cloud Translation v3 (NMT, text only; `yue` supported) | Role decided after the bake-off: none, last-resort fallback, or main. Adopting it means rewording hard rules 4 and 6 (owner approval) |
 | TTS | Google Chirp 3 HD voices, Cantonese and Mandarin | Google's older non-Chirp voices |
 
 Primary translation model rule (both providers stay configured, each the other's fallback):
@@ -172,7 +173,8 @@ Primary translation model rule (both providers stay configured, each the other's
 
 Not used: Azure (one cloud only), self-hosted or on-device models (no wav2vec, no Hugging
 Face weights), Groq TTS (no Chinese voices), the Gemini API / AI Studio free tier (fails ZDR),
-Alibaba Model Studio incl. Qwen3-TTS (ZDR for enterprise customers only).
+Alibaba Model Studio incl. Qwen3-TTS (ZDR for enterprise customers only), Google Media
+Translation API (shut down in 2024), the Google Translate app (no API).
 
 ## Billing and plans
 
@@ -224,7 +226,8 @@ Dockerfile
       2–3 LLMs × 2–3 Cantonese voices for a blind test; score Cantonese STT on the family's
       recordings; deploy a test service to `us-central1` and measure time-to-first-audio.
       Run each translation model with reasoning off and on its lowest setting.
-      Score every model's `yue` output for colloquial markers (佢, 係, 嘅, 咗, 唔, 喺, 冇) and
+      Google Cloud Translation is tested alongside the LLMs as a candidate.
+      Score every model's `yue` output for colloquial markers (佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢) and
       confirm each voice is a true yue-HK voice, not a Mandarin voice reading Traditional text.
       Score Mandarin STT (Chirp 3, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe`) on 15–20
       Chongqing-accented, fast narration clips, and measure how often the Cantonese-label junk
@@ -317,3 +320,8 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
 - 2026-10-13 — Hub PIN gates every call that costs money. Daily spending is a warning banner
   only (above US$12/day, PIN phones only), never a pause.
 - 2026-10-13 — Translation LLM reasoning off or at its lowest setting, checked in the bake-off.
+- 2026-10-14 — Google Cloud Translation (text only, zero data retention by default) added as a
+  bake-off candidate for the translation step. Its role is decided after the bake-off; hard
+  rules 4 and 6 are unchanged unless it is adopted. The Google Translate app's early cut-off
+  after short pauses is the app's own listening logic and doesn't affect the API.
+- 2026-10-14 — Colloquial-marker list unified: 佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢.

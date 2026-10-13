@@ -164,6 +164,7 @@ Google Cloud is the primary provider for every stage, each stage has a fallback 
 | --- | --- | --- | --- |
 | STT, Mandarin, Cantonese and English | Google Speech-to-Text V2, `chirp_3` model, sync requests only: cmn-Hans-CN (GA), yue-Hant-HK (Preview), en-US. Runs only in the `us` and `eu` multi-regions. The glossary is also passed as phrase biasing | OpenAI `gpt-4o-mini-transcribe` | Bake-off scores all candidates, plus `gpt-4o-transcribe`, on Chongqing-accented, fast narration; the order may flip. It also checks that the fallback doesn't return Mandarin-style text for Cantonese speech |
 | Translation LLM | Decided by 15 Nov using the rule below: Gemini 3.6 Flash on **Vertex AI**, or Groq | The other of the two. Groq candidates: `qwen/qwen3.8-27b` (Preview) and `openai/gpt-oss-120b` (Production) | All candidates pass the same blind test and colloquial-marker check, in both directions |
+| Translation, bake-off candidate | Google Cloud Translation v3, standard (NMT) model, text only: `zh-CN` → `yue`, `en`; `yue`, `en` → `zh-CN` | Role decided after the bake-off: none, last-resort fallback, or main translator | Same blind test and colloquial-marker check as the LLMs. See "Google Cloud Translation" below |
 | TTS, Cantonese and Mandarin | Google Chirp 3 HD voices (Cantonese yue-HK in Preview), one non-streaming request per sentence returning MP3 | Google's older non-Chirp voices | In-laws' blind listening test picks the voices. MP3 because it plays on every iPhone; Ogg Opus support in iOS Safari is unconfirmed, and per-sentence clips gain little from streaming |
 | Pause detection | Silero VAD in the browser (`@ricky0123/vad-web`) | None | 15-second chunk cap; the server splits long transcripts at punctuation |
 
@@ -173,7 +174,23 @@ Google Cloud is the primary provider for every stage, each stage has a fallback 
 
 **Reasoning off.** Reasoning ("thinking" before answering) is switched off on the translation model, or set to its lowest level where it can't be switched off (`gpt-oss-120b`: low), through per-provider config. For one sentence with a glossary it rarely improves quality and adds one to several seconds. Speech-to-text and text-to-speech have no reasoning setting and are unaffected. The bake-off runs each model both ways; if "off" loses noticeably in the blind test or the colloquial-marker score, the lowest setting that wins is used.
 
-**Failover.** If a provider errors or is too slow on a sentence, the adapter retries that sentence on the standby. As a last resort the app shows the text and flags the hub operator to interpret.
+**Google Cloud Translation (bake-off candidate, added 14 Oct).** This is Google's translation API, the same family as the Google Translate app, but it takes **text only**. It can replace only the translation step; speech-to-text, pause detection and text-to-speech stay as designed. The app's early cut-off after short pauses comes from the app's own listening logic and doesn't apply to the API.
+
+- **Strengths:**
+  - Meets zero data retention by default: text is "held briefly in-memory" and never used for training, so no exception request is needed.
+  - Typically answers in a few hundred milliseconds, faster than an LLM.
+  - Priced per character with a monthly free allowance (re-check before the bake-off).
+  - Authenticates with the service account, so no key is needed.
+  - Its failure modes are unrelated to Groq's caps and Vertex AI's 429 errors.
+- **Limitations:**
+  - Cantonese is supported only by the standard (NMT) model, not by Google's Translation LLM, so the output style can't be steered toward colloquial Cantonese.
+  - Each sentence is translated without the previous 2–3 sentences as context.
+  - One call per target language.
+  - Glossaries must be uploaded from a Cloud Storage bucket, and the docs don't confirm they work with Cantonese.
+- **What it would take to adopt:** a provider-specific translation adapter alongside the OpenAI-compatible LLM client, and rewording hard rules 4 and 6, which assume an LLM. Rules change only if it wins a role, and with the owner's approval.
+- **Expected role:** the last-resort fallback after Gemini and Groq. It becomes the main translator only if its Cantonese matches the best LLM in the blind test. If its Cantonese comes out formal, it is used for family → guide only, or not at all.
+
+**Failover.** If a provider errors or is too slow on a sentence, the adapter retries that sentence on the standby. As a last resort the app shows the text and flags the hub operator to interpret (unless Cloud Translation is adopted as the last fallback).
 
 **Ruled out.** OpenAI GPT-Realtime-Translate (no Cantonese output voice), conversational realtime models (an assistant, not an interpreter), Groq TTS (no Chinese voices, and Groq does not host Qwen3-TTS), the Gemini API free tier in AI Studio (prompts may be used to improve Google's models, so it fails ZDR), Qwen3-TTS on Alibaba Model Studio (ZDR only for enterprise customers, and flagged content can be kept for up to 2 years) and Azure Speech (kept to one cloud provider). OpenAI's API has no free tier, so it serves only as a paid STT fallback.
 
@@ -373,7 +390,9 @@ No existing tool delivers private Cantonese audio to each person's own phone, so
 
 | Tool | What it does well | Why it was not chosen |
 | --- | --- | --- |
-| Google Translate (conversation mode) | Cantonese text and speech; works on SG roaming | One shared device, two people at a time; no private audio per person |
+| Google Translate (conversation mode) | Cantonese text and speech; works on SG roaming | One shared device, two people at a time; no private audio per person; stops listening after pauses shorter than 1 second (tested 14 Oct 2026); no API |
+| Google Cloud Translation API | Text translation including Cantonese; zero data retention by default; fast and cheap | Text only, so it can't be a whole solution. Tested in the bake-off as the translation step (see "Model and provider choices") |
+| Google Media Translation API | Was streaming speech translation | Shut down after 1 July 2024; Google points to Speech-to-Text plus Cloud Translation instead |
 | Microsoft Translator Converse | Was the closest multi-device group feature | Retired on 30 June 2026 |
 | iFlytek app and translator device | Strong Mandarin ↔ Cantonese; works natively in China | Shared device; the app may not appear on the SG App Store; the device costs about ¥5,999 |
 | Timekettle earbuds and X1 hub | Cantonese supported; multi-person modes | Group modes need several devices (the X1 needs at least two hubs at €669.40 each); audio is not on each person's own phone |
@@ -445,7 +464,7 @@ gantt
   Chongqing trip             :a6, 2026-12-19, 5d
 ```
 
-1. **Week 1, Cantonese bake-off.** Run 10–15 recorded Mandarin narration sentences through 2–3 translation models and 2–3 Cantonese voices, blind, for the in-laws to judge. Score each Cantonese STT on their recorded questions. Check every model's Cantonese for colloquial markers (佢, 係, 嘅, 咩, 唔, 喺, 冇) and confirm each voice is a true yue-HK voice, not a Mandarin voice reading Traditional characters. Score Mandarin speech-to-text (Chirp 3, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe`) on 15–20 clips of Chongqing-accented, fast guide narration, and measure how often the Cantonese-label junk filter drops real guide speech. Run each translation model with reasoning off and on its lowest setting. Test on the family's iPhones whether listener audio keeps playing with the screen locked. Deploy a test service to `us-central1`, measure time-to-first-audio and confirm the eSIM's routing. Enable billing with a budget alert, and send Google both ZDR requests (the Vertex AI abuse-monitoring exception and written confirmation of Text-to-Speech retention).
+1. **Week 1, Cantonese bake-off.** Run 10–15 recorded Mandarin narration sentences through 2–3 translation models and 2–3 Cantonese voices, blind, for the in-laws to judge. Score each Cantonese STT on their recorded questions. Google Cloud Translation runs alongside the LLMs as a candidate. Check every model's Cantonese for colloquial markers (佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢) and confirm each voice is a true yue-HK voice, not a Mandarin voice reading Traditional characters. Score Mandarin speech-to-text (Chirp 3, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe`) on 15–20 clips of Chongqing-accented, fast guide narration, and measure how often the Cantonese-label junk filter drops real guide speech. Run each translation model with reasoning off and on its lowest setting. Test on the family's iPhones whether listener audio keeps playing with the screen locked. Deploy a test service to `us-central1`, measure time-to-first-audio and confirm the eSIM's routing. Enable billing with a budget alert, and send Google both ZDR requests (the Vertex AI abuse-monitoring exception and written confirmation of Text-to-Speech retention).
 2. **Weeks 2–3, single-device MVP (guide → family).** The hub records Mandarin or takes typed Mandarin, shows Cantonese text and plays Cantonese audio on earphones, with provider adapters in place.
 3. **Weeks 4–5, rooms and listener PWA.** QR join, WebSocket fan-out, bubbles, player states, on-phone cache, reconnect and backfill; English text if time permits. Lock the primary translation model by 15 Nov.
 4. **Weeks 6–7, field tests in Singapore.** Everything first switches to its trip configuration (Groq Developer plan, OpenAI credit topped up, budget alert raised). The family uses their own phones in noisy places such as hawker centres and the MRT, with someone acting as the Mandarin guide and wearing the spare hub phone. Compare its transcripts against a clip-on to decide whether to buy a mic. Phase 2 (family → guide) starts only once guide → family passes.
@@ -454,7 +473,7 @@ gantt
 
 ## Open decisions
 
-Nine decisions remain; most close after the week-1 bake-off. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
+Ten decisions remain; most close after the week-1 bake-off. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
 
 - [ ] Get the spare hub phone and its eSIM or physical SIM; confirm the line routes outside China
 - [ ] Whether the guide will be driving or seated separately (affects phone placement in the car)
@@ -462,6 +481,7 @@ Nine decisions remain; most close after the week-1 bake-off. Decided on 13 Oct: 
 - [ ] Google's written confirmation that Text-to-Speech doesn't retain text (request in week 1)
 - [ ] Primary translation model, Gemini on Vertex AI or Groq, by 15 Nov using the decision rule
 - [ ] Confirm the STT and TTS primaries (Chirp 3, Chirp 3 HD) or promote a fallback, after the bake-off
+- [ ] Google Cloud Translation's role (none, last-resort fallback, or main translator), after the bake-off
 - [ ] New-bubble cue while paused: chime or animation (every family phone is an iPhone, and iOS Safari can't vibrate)
 - [ ] Clip-on mic for the guide: only if the weeks 6–7 field test shows phone-only is not enough
 - [ ] Whether English text shows by default for the wife's siblings
