@@ -21,12 +21,22 @@ The plan and its questions come from `CLAUDE.md` ("Build phases") and `docs/arch
 | --- | --- | --- |
 | `00_smoke.py` | Calls every provider once: model IDs, reasoning switches, Chirp 3 language labels, real `yue-HK` voices, Cloud Translation pairs | Setup only |
 | `01_prepare_clips.py` | Guide videos and voice memos → 16 kHz mono WAV chunks split at pauses (15 s cap) | Recordings |
-| `02_stt_bench.py`, `03_stt_score.py` | STT configurations on every chunk; error rate against corrected transcripts | Chunks, corrected references |
-| `04_translate_bench.py`, `05_translate_score.py` | LLM configurations and Cloud Translation; colloquial score, speed | Narration sentences |
-| `06_tts_bench.py`, `07_build_blind_test.py`, `08_blind_score.py` | Voices, the in-laws' blind test page, unblinding | Finalists |
-| `probe/` | Tiny Cloud Run service: `/latency`, `/locktest` | Deploy to `us-central1` |
+| `02_stt_bench.py`, `03_stt_score.py` | STT configurations on every chunk; error rate against corrected transcripts, junk-filter drop rates | Chunks, corrected references |
+| `04a_glossary.py` | Uploads `glossary.yaml` to Cloud Translation (via a Cloud Storage file) | Setup |
+| `04_translate_bench.py`, `05_translate_score.py` | LLM configurations and Cloud Translation; colloquial score, speed; picks blind-test finalists | `sentences.yaml`, reviewed references |
+| `06_tts_bench.py`, `07_build_blind_test.py`, `08_blind_score.py` | Voices, the in-laws' blind test page, unblinding | Finalists (not written yet) |
+| `probe/` | Tiny Cloud Run service: `/latency`, `/locktest` | Not written yet |
 
-Only `00_smoke.py` exists so far; the others are added step by step.
+Every bench appends to a log in `out/` and skips calls it has already made, so after an error
+or Groq's daily cap, just run it again. Try `--limit 2` first to check a step on a few items.
+
+### Correcting transcripts (between steps 3 and 4)
+
+`02_stt_bench.py` drafts `out/references.csv` from the best transcript of each chunk. Open it
+in Excel or Numbers, listen to the chunk (`out/chunks/<set>/<chunk_id>.wav`), fix the
+`reference` column, and put `y` in `reviewed`. Only reviewed rows are scored, and re-running
+the bench never overwrites your corrections. Reviewed guide transcripts also supply real
+sentences to the translation bench.
 
 Run any script with `uv run python <script>`; `uv run python 00_smoke.py --only llm` runs one
 group. Tests: `uv run pytest`. Lint: `uv run ruff check .`

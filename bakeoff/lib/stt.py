@@ -14,7 +14,18 @@ from openai import OpenAI
 class SttResult:
     text: str
     latency_s: float
-    languages: list[str] = field(default_factory=list)  # per-result labels (Chirp 3 only)
+    # (text, language label) per recognition result; Chirp 3 only, empty for OpenAI.
+    segments: list[tuple[str, str]] = field(default_factory=list)
+
+    @property
+    def languages(self) -> list[str]:
+        return [lang for _, lang in self.segments]
+
+    def labelled_cantonese(self) -> bool:
+        """Junk-filter layer 2: most of the transcript (by characters) is labelled Cantonese."""
+        yue = sum(len(t) for t, lang in self.segments if lang.lower().startswith("yue"))
+        total = sum(len(t) for t, _ in self.segments)
+        return total > 0 and yue * 2 > total
 
 
 class GoogleStt:
@@ -47,11 +58,13 @@ class GoogleStt:
             request=cs.RecognizeRequest(recognizer=self.recognizer, config=config, content=wav)
         )
         latency = perf_counter() - start
-        results = [r for r in response.results if r.alternatives]
+        segments = [
+            (r.alternatives[0].transcript.strip(), r.language_code or "")
+            for r in response.results
+            if r.alternatives and r.alternatives[0].transcript.strip()
+        ]
         return SttResult(
-            text=" ".join(r.alternatives[0].transcript.strip() for r in results).strip(),
-            latency_s=latency,
-            languages=[r.language_code for r in results if r.language_code],
+            text=" ".join(t for t, _ in segments), latency_s=latency, segments=segments
         )
 
 

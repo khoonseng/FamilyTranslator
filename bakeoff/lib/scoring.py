@@ -33,13 +33,19 @@ def edit_distance(a: str, b: str) -> int:
     return prev[-1]
 
 
+def char_edits(reference: str, hypothesis: str, script: str = "simplified") -> tuple[int, int]:
+    """(edits, reference length) after normalising, so error rates can be pooled over chunks."""
+    ref, hyp = normalize(reference, script), normalize(hypothesis, script)
+    return edit_distance(ref, hyp), len(ref)
+
+
 def cer(reference: str, hypothesis: str, script: str = "simplified") -> float:
     """Character error rate: edits needed to turn the hypothesis into the reference,
     divided by the reference length. 0.0 is perfect; can exceed 1.0."""
-    ref, hyp = normalize(reference, script), normalize(hypothesis, script)
-    if not ref:
-        return 0.0 if not hyp else 1.0
-    return edit_distance(ref, hyp) / len(ref)
+    edits, length = char_edits(reference, hypothesis, script)
+    if not length:
+        return 0.0 if not edits else 1.0
+    return edits / length
 
 
 def count_markers(text: str, markers: list[str], exceptions: list[str] = ()) -> int:

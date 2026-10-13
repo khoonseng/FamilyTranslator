@@ -1,0 +1,14 @@
+# Typical Chongqing guide narration, drafted for the translation bench. Read in order: each
+# sentence's context is the two before it. Sentences from the real guide clips are added
+# automatically from the reviewed references (04_translate_bench.py --guide-sentences).
+sentences:
+  - 各位早上好，今天我们第一站先去解放碑，大概二十分钟就到了。
+  - 洪崖洞晚上七点半以后开灯，那个时候人特别多，大家一定要跟紧我，不要走散了。
+  - 等一下我们坐长江索道过江，排队可能要四十分钟左右，大家可以先去上个厕所。
+  - 李子坝这个站很有名，轻轨是直接从楼中间穿过去的，我们在下面的观景台拍照。
+  - 磁器口是一个千年古镇，里面有很多小吃，比如陈麻花、酸辣粉，但是周末人非常多。
+  - 重庆火锅一般分微辣、中辣、特辣，老人家肠胃不好的话，建议点鸳鸯锅。
+  - 中午我们在附近吃饭，吃完饭大概一点半在这个门口集合，车子就停在对面。
+  - 重庆是山城，很多路都是上坡下坡，走路的时候慢一点，注意脚下的台阶。
+  - 这个白象居以前是没有电梯的，住在上面的人每天都要爬好多层楼梯。
+  - 明天去武隆，路上要开三个小时左右，早上七点在酒店大堂等，记得带好护照。
