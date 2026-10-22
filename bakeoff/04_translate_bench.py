@@ -11,7 +11,7 @@ for latency; quality is judged on repeat 0.
 
 Groq's Free plan allows about 30 requests a minute and 1,000 a day, so Groq calls are paced
 and the run is resumable: if it hits the daily cap, re-run tomorrow and it carries on.
-Appends to out/translations.jsonl.
+Appends to out/translations.jsonl, or to the log named by --log.
 
 Run: uv run python 04_translate_bench.py [--configs qwen-off,cloud-translate] [--repeats 3]
 """
@@ -29,7 +29,6 @@ from lib.records import append_jsonl, done_keys, read_csv, read_jsonl
 from lib.scoring import parse_json_object
 from lib.text import split_sentences
 
-RUNS_FILE = OUT / "translations.jsonl"
 REVIEWED = {"y", "yes", "x", "1", "true"}
 MIN_INTERVAL_S = {"groq": 2.2}  # stay under 30 requests/minute on the Free plan
 MT_CODES = {"guide": "zh-CN", "yue": "yue", "en": "en"}
@@ -121,6 +120,11 @@ def main() -> None:
     parser.add_argument("--guide-sentences", type=int, default=5)
     parser.add_argument("--directions", default="guide_to_family,family_to_guide")
     parser.add_argument("--limit", type=int, default=0, help="sentences per direction (trial)")
+    parser.add_argument(
+        "--log",
+        default="translations.jsonl",
+        help="run log under out/; a new name starts a fresh run (e.g. translations_r2.jsonl)",
+    )
     args = parser.parse_args()
 
     cfg = config.load()
@@ -139,7 +143,8 @@ def main() -> None:
     provider_of = {n: cfg["llm"]["configs"][n]["provider"] for n in clients}
     last_call: dict[str, float] = {}
 
-    records = read_jsonl(RUNS_FILE)
+    runs_file = OUT / args.log
+    records = read_jsonl(runs_file)
     done = done_keys(records, ("sentence_id", "config", "repeat"))
     for direction in ("guide_to_family", "family_to_guide"):
         if direction not in directions:
@@ -182,7 +187,7 @@ def main() -> None:
                     except Exception as exc:  # noqa: BLE001 - log, keep going, re-run later
                         record["error"] = f"{type(exc).__name__}: {exc}"
                         print(f"  {sentence['id']} {name} #{repeat} ERROR {record['error']}")
-                    append_jsonl(RUNS_FILE, record)
+                    append_jsonl(runs_file, record)
 
 
 if __name__ == "__main__":

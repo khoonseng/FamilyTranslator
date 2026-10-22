@@ -122,3 +122,11 @@ def test_cantonese_share_per_sentence():
     guide = "等一下我们坐长江索道过江，排队可能要四十分钟左右，唔"
     assert scoring.cantonese_share(guide, chars) < 0.05
     assert scoring.cantonese_share("。", chars) == 0.0
+
+
+def test_glitches():
+    assert scoring.glitches("排隊可能要四十 processing 分鐘左右") == ["latin:processing"]
+    assert scoring.glitches("聽住，聽住，聽住，聽住，明天去武隆") == ["loop:聽住，"]
+    assert scoring.glitches("大家早晨，我哋第一站先去解放碑。") == []
+    # Ordinary doubling in Cantonese is not a loop.
+    assert scoring.glitches("佢慢慢行，好好睇吓。") == []

@@ -13,11 +13,12 @@ Run: uv run python 05_translate_score.py [--min-colloquial 0.5]
 
 import argparse
 import json
+from pathlib import Path
 
 from lib import config
 from lib.config import OUT
 from lib.records import median, percentile, read_jsonl
-from lib.scoring import colloquial_score, glossary_hits, simplified_chars
+from lib.scoring import colloquial_score, glitches, glossary_hits, simplified_chars
 
 
 def group_of(name: str, cfg: dict) -> str:
@@ -50,8 +51,17 @@ def score_config(rows: list[dict], cfg: dict) -> dict:
     glossary = config.glossary()
     gy = [glossary_hits(src, out, glossary, "yue") for src, out in yue]
     ge = [glossary_hits(src, out, glossary, "en") for src, out in en]
+    # Glitches count over every repeat: a defect in any run could reach a listener.
+    glitched = [
+        (r["sentence_id"], r["repeat"], g)
+        for r in rows
+        if (g := glitches((r["output"] or {}).get("yue", "")))
+    ]
     return {
         "sentences": len(first),
+        "glitches": len(glitched),
+        "glitch_examples": glitched,
+        "outputs": len(rows),
         "json_ok": sum(r["json_ok"] for r in rows) / len(rows) if rows else None,
         "colloquial": colloquial,
         "formal": formal,
@@ -78,9 +88,10 @@ def effort_rank(name: str, cfg: dict) -> int:
 
 
 def quality_key(name: str, scores: dict) -> tuple:
-    """Higher is better: colloquial share, then fewer Simplified characters, then speed."""
+    """Higher is better: fewer glitches, then colloquial share, then fewer Simplified
+    characters, then speed."""
     s = scores[name]
-    return (round(s["ratio"] or 0, 6), -s["simplified"], -(s["total"] or 99))
+    return (-s["glitches"], round(s["ratio"] or 0, 6), -s["simplified"], -(s["total"] or 99))
 
 
 def pick_setting(members: list[str], scores: dict, cfg: dict, margin: float) -> str:
@@ -112,10 +123,13 @@ def main() -> None:
         help="colloquial-share gain needed to prefer a reasoning-on setting over reasoning off",
     )
     parser.add_argument("--min-json-ok", type=float, default=0.9)
+    parser.add_argument("--log", default="translations.jsonl", help="run log under out/")
     args = parser.parse_args()
 
     cfg = config.load()
-    records = latest(read_jsonl(OUT / "translations.jsonl"))
+    records = latest(read_jsonl(OUT / args.log))
+    # Outputs carry the log's suffix: translations_r2.jsonl -> translation_scores_r2.md ...
+    suffix = Path(args.log).stem.removeprefix("translations")
     if not records:
         raise SystemExit("No translations yet: run 04_translate_bench.py first.")
     guide = [r for r in records.values() if r["direction"] == "guide_to_family"]
@@ -130,15 +144,18 @@ def main() -> None:
         "",
         "Colloquial share = colloquial markers / (colloquial + formal markers) in `yue`.",
         "Formal-leaning = sentences with more formal than colloquial markers.",
+        "Glitches = outputs (over all repeats) with English words or runaway repetition.",
+        "None of these catch wrong meaning: read out/translations_review.md as well.",
         "",
-        "| Config | Sentences | Valid JSON | Colloquial share | Formal-leaning "
+        "| Config | Sentences | Glitches | Valid JSON | Colloquial share | Formal-leaning "
         "| Simplified chars | Glossary yue | Glossary en | First token "
         "| Total (median) | Total (p90) | Reasoning tokens |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for n, s in scores.items():
         lines.append(
-            f"| {n} | {s['sentences']} | {fmt(s['json_ok'], '{:.0%}')} | "
+            f"| {n} | {s['sentences']} | {s['glitches']}/{s['outputs']} | "
+            f"{fmt(s['json_ok'], '{:.0%}')} | "
             f"{fmt(s['ratio'], '{:.0%}')} ({s['colloquial']}/{s['formal']}) | "
             f"{s['formal_leaning']} | {s['simplified']} | {s['glossary_yue']} | "
             f"{s['glossary_en']} | {fmt(s['ttft'])} | {fmt(s['total'])} | "
@@ -158,6 +175,10 @@ def main() -> None:
             dropped.append((best, f"valid JSON {fmt(s['json_ok'], '{:.0%}')}"))
         else:
             finalists.append({"config": best, "group": group})
+    examples = [(n, *g) for n, s in scores.items() for g in s["glitch_examples"]]
+    if examples:
+        lines += ["", "## Glitches found", ""]
+        lines += [f"- `{n}` {sid} #{rep}: {', '.join(g)[:80]}" for n, sid, rep, g in examples]
     lines += ["", "## Blind-test finalists", ""]
     lines += [f"- {f['config']} ({f['group']})" for f in finalists]
     lines += [f"- dropped: {n} ({why})" for n, why in dropped]
@@ -178,14 +199,14 @@ def main() -> None:
             )
 
     report = "\n".join(lines) + "\n"
-    (OUT / "translation_scores.md").write_text(report, encoding="utf-8")
-    (OUT / "finalists.json").write_text(json.dumps(finalists, indent=2), encoding="utf-8")
-    write_review(guide + family)
+    (OUT / f"translation_scores{suffix}.md").write_text(report, encoding="utf-8")
+    (OUT / f"finalists{suffix}.json").write_text(json.dumps(finalists, indent=2), encoding="utf-8")
+    write_review(guide + family, OUT / f"translations_review{suffix}.md")
     print(report)
-    print(f"Side-by-side outputs: {OUT / 'translations_review.md'}")
+    print(f"Side-by-side outputs: {OUT / f'translations_review{suffix}.md'}")
 
 
-def write_review(rows: list[dict]) -> None:
+def write_review(rows: list[dict], path: Path) -> None:
     """Every repeat-0 output, grouped by sentence, for reading by eye (stays in out/)."""
     lines = ["# Translations side by side", ""]
     seen = []
@@ -203,7 +224,7 @@ def write_review(rows: list[dict]) -> None:
             values = " · ".join(f"**{k}** {v}" for k, v in output.items())
             lines.append(f"- `{r['config']}` {values}")
         lines.append("")
-    (OUT / "translations_review.md").write_text("\n".join(lines), encoding="utf-8")
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 if __name__ == "__main__":

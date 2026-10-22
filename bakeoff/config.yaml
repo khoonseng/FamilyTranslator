@@ -65,6 +65,14 @@ llm:
       model: google/gemini-3.6-flash
       temperature: 1.0
       params: {reasoning_effort: low}
+    # Owner-requested test (2026-10-23): at 1.0, the first run produced glitches such as
+    # "四十 processing 分鐘". Google's warning against lowering temperature is mainly about
+    # reasoning tasks; this checks whether 0.2 is cleaner with reasoning at its minimum.
+    gemini-minimal-t0.2:
+      provider: vertex
+      model: google/gemini-3.6-flash
+      temperature: 0.2
+      params: {reasoning_effort: minimal}
     # Qwen3.8-27B on Groq produced no reasoning even with reasoning_effort=default, so only
     # its sampling is varied. 0.7 / top-p 0.8 is Qwen3's guidance for non-thinking mode.
     qwen-t0.2:

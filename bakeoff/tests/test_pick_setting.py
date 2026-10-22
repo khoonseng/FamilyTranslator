@@ -14,8 +14,8 @@ CFG = {
 }
 
 
-def s(ratio, total=0.5, simplified=0):
-    return {"ratio": ratio, "total": total, "simplified": simplified}
+def s(ratio, total=0.5, simplified=0, glitches=0):
+    return {"ratio": ratio, "total": total, "simplified": simplified, "glitches": glitches}
 
 
 def test_best_temperature_wins_without_margin():
@@ -28,3 +28,8 @@ def test_lowest_reasoning_kept_unless_clearly_worse():
     assert score_mod.pick_setting(["gem-min", "gem-low"], close, CFG, 0.05) == "gem-min"
     far = {"gem-min": s(0.70), "gem-low": s(0.85)}
     assert score_mod.pick_setting(["gem-min", "gem-low"], far, CFG, 0.05) == "gem-low"
+
+
+def test_glitches_beat_colloquial_share():
+    scores = {"q-t0.2": s(0.80), "q-t0.7": s(0.90, glitches=1)}
+    assert score_mod.pick_setting(["q-t0.2", "q-t0.7"], scores, CFG, 0.05) == "q-t0.2"

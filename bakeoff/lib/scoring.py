@@ -86,6 +86,19 @@ def cantonese_share(text: str, chars: list[str]) -> float:
     return cantonese_char_count(text, chars) / length if length else 0.0
 
 
+_LATIN_WORD = re.compile(r"[A-Za-z]{2,}")
+_LOOP = re.compile(r"(.{1,8}?)\1{3,}")
+
+
+def glitches(text: str) -> list[str]:
+    """Output defects the colloquial score can't see: stray English words inside Cantonese
+    (`四十 processing 分鐘`) and runaway repetition (`聽住，聽住，聽住，…`). The TTS would read
+    either aloud to the listeners."""
+    found = [f"latin:{w}" for w in _LATIN_WORD.findall(text)]
+    found += [f"loop:{m.group(1)}" for m in _LOOP.finditer(text)]
+    return found
+
+
 def simplified_chars(text: str) -> list[str]:
     """Characters that only exist in Simplified form (they change under Simplified→Traditional).
     Heuristic: a few characters valid in both scripts (e.g. 后) are also flagged."""
