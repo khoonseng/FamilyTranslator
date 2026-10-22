@@ -39,9 +39,9 @@ mt:
 # Translation LLMs: ONE OpenAI-compatible client, one entry per provider/model/setting.
 # `params` is sent as-is in the request body, so provider-specific reasoning switches
 # stay in config. auth: google = service-account token (Vertex), else env var named.
-# Sampling is per model (decided 2026-10-23): Gemini 3 stays at temperature 1.0, as Google
-# strongly recommends (lower can loop or degrade). Qwen and gpt-oss run at 0.2 and at their
-# makers' recommended values, and the bake-off keeps whichever scores better.
+# Sampling is per model (decided 2026-10-23): Gemini at temperature 0.2 (see below). Qwen
+# and gpt-oss run at 0.2 and at their makers' recommended values; 0.2 won for both in run 1
+# (the higher settings produced a 36x loop and a wrong time).
 llm:
   providers:
     vertex:
@@ -55,24 +55,21 @@ llm:
   configs:
     # Gemini 3.6 Flash on Vertex accepts minimal | low | medium | high | max; `minimal` is its
     # "off" (smoke test 2026-10-22: no reasoning tokens).
-    gemini-minimal:
-      provider: vertex
-      model: google/gemini-3.6-flash
-      temperature: 1.0
-      params: {reasoning_effort: minimal}
-    gemini-low:
-      provider: vertex
-      model: google/gemini-3.6-flash
-      temperature: 1.0
-      params: {reasoning_effort: low}
-    # Owner-requested test (2026-10-23): at 1.0, the first run produced glitches such as
-    # "四十 processing 分鐘". Google's warning against lowering temperature is mainly about
-    # reasoning tasks; this checks whether 0.2 is cleaner with reasoning at its minimum.
+    # The Gemini setting is temperature 0.2 (decided 2026-10-23). In the second run, Gemini at
+    # 1.0 had ~7 errors in 29 outputs ("四十 processing 分鐘", 好多年夜食 for 小食) and at 0.2 had
+    # 1, and was faster. Google advises 1.0 mainly for reasoning tasks; here reasoning is at
+    # its minimum. The 1.0 configs (gemini-minimal, gemini-low) are retired; runs 1-2 in out/
+    # still score because each log record carries its model and settings.
     gemini-minimal-t0.2:
       provider: vertex
       model: google/gemini-3.6-flash
       temperature: 0.2
       params: {reasoning_effort: minimal}
+    gemini-low-t0.2:
+      provider: vertex
+      model: google/gemini-3.6-flash
+      temperature: 0.2
+      params: {reasoning_effort: low}
     # Qwen3.8-27B on Groq produced no reasoning even with reasoning_effort=default, so only
     # its sampling is varied. 0.7 / top-p 0.8 is Qwen3's guidance for non-thinking mode.
     qwen-t0.2:

@@ -172,7 +172,15 @@ Google Cloud is the primary provider for every stage, each stage has a fallback 
 
 **Translation call design.** One LLM call per sentence returns the target languages as JSON, never the source language: guide speech returns `yue` (and `en` once English is added), and family speech in phase 2 returns `zh_hans` plus whichever of `yue` or `en` wasn't spoken. The transcript itself is the source-language text, so the model can't reword what was said, and fewer output tokens means less waiting. The field TTS needs comes first and is streamed, so TTS can start as soon as it closes. The prompt carries a glossary of Chongqing place and dish names (解放碑, 洪崖洞, 磁器口, 毛血旺) and only the last 2–3 utterances as context.
 
-**Sampling settings.** Temperature and top-p are set per model in config. They change how the model picks words: low means consistent and literal, high means more varied wording with more risk of errors. Gemini 3 stays at temperature 1.0, because Google strongly recommends its default and warns that lower values can cause looping or worse output. Qwen and gpt-oss run in the bake-off at 0.2 and at their makers' recommended values (Qwen 0.7 with top-p 0.8; gpt-oss 1.0 with top-p 1.0), and the better-scoring setting is kept. Cloud Translation, Chirp 3 and the voices have no such settings.
+**Sampling settings.** Temperature and top-p are set per model in config. They change how the model picks words: low means consistent and literal, high means more varied wording with more risk of errors. **All three models run at temperature 0.2 (decided 23 Oct, from bake-off evidence):**
+
+| Model | Higher setting tested | What went wrong at the higher setting |
+| --- | --- | --- |
+| Gemini | 1.0, Google's general advice | About 7 errors in 29 outputs, against 1 at 0.2: stray English words (`四十 processing 分鐘`) and wrong words (好多年夜食 for 小食, 爬好多年樓梯) |
+| gpt-oss | 1.0 with top-p 1.0, its makers' advice | Repeated `聽住，` 36 times |
+| Qwen | 0.7 with top-p 0.8, its makers' advice | Gave 兩點半 for 一點半 |
+
+Gemini at 0.2 was also faster. Google's advice to keep 1.0 is mainly about reasoning tasks, and here reasoning is at its minimum. Cloud Translation, Chirp 3 and the voices have no such settings.
 
 **Reasoning off.** Reasoning ("thinking" before answering) is switched off on the translation model, or set to its lowest level where it can't be switched off (`gpt-oss-120b`: low), through per-provider config. For one sentence with a glossary it rarely improves quality and adds one to several seconds. Speech-to-text and text-to-speech have no reasoning setting and are unaffected. The bake-off runs each model both ways; if "off" loses noticeably in the blind test or the colloquial-marker score, the lowest setting that wins is used.
 
@@ -230,6 +238,17 @@ Every provider in the stack must keep zero data from the family's conversations;
 **Choosing the primary translation model**
 
 Groq and Gemini on Vertex AI are both configured, each as the other's fallback, because their failures are unrelated: Groq fails by hitting fixed caps, Vertex AI by a busy shared pool returning 429 errors.
+
+This is real, not theoretical. In translation bench run 2 (23 Oct), Vertex AI refused **38 of 100 Gemini requests with 429** and timed out on 4 more, while the morning's run 1 had none. Groq refused 1 of 61 requests, on its Free plan, and Cloud Translation none. So if Gemini is primary, a 429 must fail over to Groq on the same sentence at once, with no waiting or retrying.
+
+**First translation findings (bench runs 1–2, 10 drafted sentences, AI-read; the in-laws' blind test decides):**
+
+| Option | Strength | Weakness | Median time |
+| --- | --- | --- | --- |
+| Gemini 0.2 | Most natural Cantonese | Hardest to reach (429s) | 1.4 s |
+| Qwen 0.2 | Fast and colloquial | Occasionally awkward or wrong phrasing | 0.5 s |
+| gpt-oss 0.2 | Steady | Repeated grammar slip (人好多人) | 1.0 s |
+| Cloud Translation | No errors and identical every time | Stiff, Mandarin-style wording | 0.2 s |
 
 - Gemini is primary if Google grants the abuse-monitoring exception **and** Gemini wins the bake-off.
 - Otherwise Groq is primary, using whichever Groq model wins the bake-off. If Qwen3.8-27B and gpt-oss-120b are close, gpt-oss-120b wins because it is a Production model, not Preview.
@@ -449,6 +468,7 @@ The biggest risks are audio capture and Cantonese quality, not hosting.
 | Translation slips into formal written Chinese or Mandarin grammar | Cantonese sounds wrong to the in-laws | Colloquial-Cantonese prompt; colloquial-marker check and blind bake-off |
 | iOS audio unlock and screen lock (every family phone is an iPhone) | Listener hears nothing once the screen locks or the phone is pocketed | Tap-to-start on join; Wake Lock API; week-1 test on the family's iPhones. If locked-screen playback fails, a fallback is a "radio mode": one continuous audio stream, which iOS keeps playing with the screen locked |
 | Tunnels and dead zones | Missed bubbles | Reconnect and backfill from the last utterance id |
+| Vertex AI shared pool refuses Gemini requests (429) | Translations stall if the app waits on Gemini | Immediate per-sentence failover to Groq, never retry on Vertex; seen at ~40% of requests in a 23 Oct bench run |
 | Cantonese TTS still in Preview at Google | Voice outage | Adapter failover to Google's older voices; last resort text plus human interpreting |
 | Mandarin vs Cantonese auto-detection | Wrong pipeline | Explicit Guide and Family modes on the hub |
 | Listener phones playing aloud | Echo and feedback into the hub mic | Earphones for every listener |

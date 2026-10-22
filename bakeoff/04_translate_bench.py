@@ -104,6 +104,11 @@ def run_llm(client: ChatClient, sentence: dict) -> dict:
     messages = translation_messages(sentence["direction"], sentence["text"], sentence["context"])
     r = client.chat(messages, stream=True)
     return {
+        # Settings travel with each record, so a log still scores after its config is retired.
+        "model": client.model,
+        "temperature": client.temperature,
+        "top_p": client.top_p,
+        "params": client.params,
         "output": parse_json_object(r.text),
         "raw": r.text,
         "ttft_s": round(r.ttft_s, 3) if r.ttft_s is not None else None,

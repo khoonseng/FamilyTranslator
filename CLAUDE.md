@@ -85,9 +85,12 @@ Build order:
      (`gpt-oss-120b`: low), as per-provider config. STT and TTS have no reasoning setting. The
      bake-off checks that this doesn't hurt translation quality; if it does, use the lowest
      setting that wins.
-   - Sampling settings (temperature, top-p) are per-model config. Gemini 3 stays at temperature
-     1.0, as Google strongly recommends (lower can loop or degrade output); Qwen and gpt-oss use
-     whichever of 0.2 or their makers' recommended values wins the bake-off.
+   - Sampling settings (temperature, top-p) are per-model config. Gemini runs at temperature 0.2:
+     in the bake-off it made ~7 errors in 29 outputs at 1.0 (stray English words, wrong words)
+     and 1 at 0.2. Qwen and gpt-oss also run at 0.2; their higher recommended settings produced
+     a 36x repetition loop and a wrong time.
+   - Vertex AI can refuse requests with 429 (busy shared pool) for long stretches: on Vertex,
+     fail over to the other provider at once, never wait and retry.
 7. All provider calls are stateless. Translation context = glossary + last 2–3 utterances, never
    the whole session.
 8. Input language comes from the hub mode (Guide / Family). Never auto-detect Mandarin vs
@@ -359,4 +362,11 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   `gpt-transcribe` (bake-off decides). `gpt-live-transcribe` is not used: the Realtime API keeps
   data 30 days unless OpenAI approves ZDR, and a streaming fallback adds little for its cost.
 - 2026-10-23 — Sampling per model: Gemini 3 at temperature 1.0 (Google's guidance); Qwen and
-  gpt-oss tested at 0.2 and at their makers' recommended values.
+  gpt-oss tested at 0.2 and at their makers' recommended values. (Gemini superseded below.)
+- 2026-10-23 — All translation LLMs run at temperature 0.2, Gemini included (owner-approved).
+  Translation bench run 2 (10 sentences × 3 repeats): Gemini ~7/29 errors at 1.0 vs 1/29 at
+  0.2 and faster; run 1: gpt-oss at 1.0 looped, Qwen at 0.7 gave a wrong time. Blind-test
+  finalists: Cloud Translation, Gemini 0.2, gpt-oss 0.2, Qwen 0.2.
+- 2026-10-23 — Vertex AI refused ~40% of requests (429, shared pool) during run 2, with none
+  in run 1; Groq refused 1 of 61, Cloud Translation none. Gemini failover must be immediate;
+  this weighs on the 15 Nov choice of main translator.

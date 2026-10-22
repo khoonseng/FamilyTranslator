@@ -20,6 +20,25 @@ from lib.config import OUT
 from lib.records import median, percentile, read_jsonl
 from lib.scoring import colloquial_score, glitches, glossary_hits, simplified_chars
 
+# Configs retired from config.yaml whose runs predate settings being logged per record.
+RETIRED = {
+    "gemini-minimal": {
+        "model": "google/gemini-3.6-flash",
+        "params": {"reasoning_effort": "minimal"},
+    },
+    "gemini-low": {"model": "google/gemini-3.6-flash", "params": {"reasoning_effort": "low"}},
+}
+
+
+def config_view(cfg: dict, records: list[dict]) -> dict:
+    """config.yaml's configs, plus settings recorded in the log or known for retired configs."""
+    configs = dict(RETIRED)
+    for r in records:
+        if r.get("model"):
+            configs.setdefault(r["config"], {"model": r["model"], "params": r.get("params") or {}})
+    configs.update(cfg["llm"]["configs"])
+    return {**cfg, "llm": {**cfg["llm"], "configs": configs}}
+
 
 def group_of(name: str, cfg: dict) -> str:
     """Configs of the same model compete for one finalist slot."""
@@ -132,6 +151,7 @@ def main() -> None:
     suffix = Path(args.log).stem.removeprefix("translations")
     if not records:
         raise SystemExit("No translations yet: run 04_translate_bench.py first.")
+    cfg = config_view(cfg, list(records.values()))
     guide = [r for r in records.values() if r["direction"] == "guide_to_family"]
     family = [r for r in records.values() if r["direction"] == "family_to_guide"]
     names = sorted({r["config"] for r in guide})
