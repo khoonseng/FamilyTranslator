@@ -7,13 +7,18 @@ gcp:
 
 stt:
   google:
-    # Chirp 3 runs only in the `us` and `eu` multi-regions. Sync Recognize only (hard rule 14).
+    # Chirp 3 runs only in the `us` and `eu` multi-regions. Sync Recognize or streaming only,
+    # never batch (hard rule 14).
     location: us
     endpoint: us-speech.googleapis.com
     model: chirp_3
-    phrase_boost: 10            # glossary phrase biasing strength (verify range in smoke)
+    phrase_boost: 10            # glossary phrase biasing strength
+    streaming:
+      frame_ms: 100             # 3.2 KB per message; Google's cap is 25 KB
+      tail_silence_s: 1.0       # silence after each chunk so Chirp 3 notices the pause
   openai:
-    models: [gpt-4o-mini-transcribe, gpt-4o-transcribe]
+    # Fallback candidates (decided 2026-10-23): one is kept, run on the saved audio.
+    models: [gpt-4o-transcribe, gpt-transcribe]
 
 tts:
   google:
@@ -34,6 +39,9 @@ mt:
 # Translation LLMs: ONE OpenAI-compatible client, one entry per provider/model/setting.
 # `params` is sent as-is in the request body, so provider-specific reasoning switches
 # stay in config. auth: google = service-account token (Vertex), else env var named.
+# Sampling is per model (decided 2026-10-23): Gemini 3 stays at temperature 1.0, as Google
+# strongly recommends (lower can loop or degrade). Qwen and gpt-oss run at 0.2 and at their
+# makers' recommended values, and the bake-off keeps whichever scores better.
 llm:
   providers:
     vertex:
@@ -50,23 +58,40 @@ llm:
     gemini-minimal:
       provider: vertex
       model: google/gemini-3.6-flash
+      temperature: 1.0
       params: {reasoning_effort: minimal}
     gemini-low:
       provider: vertex
       model: google/gemini-3.6-flash
+      temperature: 1.0
       params: {reasoning_effort: low}
-    # Qwen3.8-27B on Groq produced no reasoning even with reasoning_effort=default, so a
-    # second "reasoning on" config would only repeat this one and spend Groq's daily quota.
-    qwen-off:
+    # Qwen3.8-27B on Groq produced no reasoning even with reasoning_effort=default, so only
+    # its sampling is varied. 0.7 / top-p 0.8 is Qwen3's guidance for non-thinking mode.
+    qwen-t0.2:
       provider: groq
       model: qwen/qwen3.8-27b
+      temperature: 0.2
       params: {reasoning_effort: none}
-    gptoss-low:
+    qwen-t0.7:
+      provider: groq
+      model: qwen/qwen3.8-27b
+      temperature: 0.7
+      top_p: 0.8
+      params: {reasoning_effort: none}
+    # 1.0 / top-p 1.0 is OpenAI's guidance for gpt-oss.
+    gptoss-low-t0.2:
       provider: groq
       model: openai/gpt-oss-120b
+      temperature: 0.2
+      params: {reasoning_effort: low, include_reasoning: false}
+    gptoss-low-t1.0:
+      provider: groq
+      model: openai/gpt-oss-120b
+      temperature: 1.0
+      top_p: 1.0
       params: {reasoning_effort: low, include_reasoning: false}
   timeout_s: 20
-  temperature: 0.2
+  temperature: null             # default when a config sets none: the provider's own default
   context_sentences: 2          # previous source sentences sent as context (hard rule 7)
 
 scoring:
@@ -75,9 +100,11 @@ scoring:
   colloquial_markers: [佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢,
                        哋, 嚟, 而家, 嗰, 畀, 啱, 咁, 喇, 囉, 喎, 乜, 點解, 邊度, 晒]
   # Characters that occur in written Cantonese but practically never in Mandarin transcripts.
-  # Candidate junk-filter test (see 03_stt_score.py): Chirp 3's language labels didn't flag
-  # Cantonese speech as Cantonese in the smoke test.
-  cantonese_only_chars: [哋, 唔, 喺, 嘅, 咗, 冇, 佢, 嚟, 啲, 嘢, 嗰, 乜, 囉, 喎]
+  # Junk-filter layer 2 (decided 2026-10-23): a Guide-mode sentence is dropped when these make
+  # up more than a set share of its characters (03_stt_score.py measures the share to use).
+  # Chirp 3's language labels can't be used: it labelled Cantonese speech as Mandarin.
+  cantonese_only_chars: [哋, 唔, 喺, 嘅, 咗, 冇, 佢, 嚟, 啲, 嘢, 嗰, 乜, 囉, 喎, 咩, 咁]
+  junk_filter_shares: [0.10, 0.15, 0.20, 0.30]   # candidate thresholds the bake-off compares
   # Formal written-Chinese forms that colloquial Cantonese replaces (他→佢, 的→嘅, 是→係 ...).
   # Matched longest first, so 他們 counts once, not as 他 + 們.
   formal_markers: [他們, 她們, 他, 她, 它, 們, 的, 是, 在, 沒有, 沒, 這, 那, 什麼, 怎麼, 不]

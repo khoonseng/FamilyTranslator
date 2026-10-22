@@ -1,14 +1,16 @@
-"""Step 3a: run every STT configuration on every chunk from 01_prepare_clips.py.
+"""Step 3a: run every non-streaming STT configuration on every chunk from 01_prepare_clips.py.
+(Streaming runs are in 02b_stt_streaming.py; both write to the same log.)
 
 Runs per set:
   guide    Chirp 3 Mandarin, with and without glossary hints; Chirp 3 Mandarin + Cantonese
-           (junk-filter label test); each OpenAI model (Mandarin hint + glossary prompt)
+           (Guide mode's language setting, for the junk filter); each OpenAI fallback candidate
+           (Mandarin hint + glossary prompt)
   chatter  Chirp 3 Mandarin (what junk Guide mode would produce); Chirp 3 Mandarin + Cantonese
-  yue      Chirp 3 Cantonese; Chirp 3 Cantonese + English (Family mode); OpenAI fallback
-  en       Chirp 3 Cantonese + English (Family mode); OpenAI fallback
+  yue      Chirp 3 Cantonese; Chirp 3 Cantonese + English (Family mode); each OpenAI candidate
+  en       Chirp 3 Cantonese + English (Family mode); each OpenAI candidate
 
 Appends to out/stt_runs.jsonl (resumable) and drafts out/references.csv for correction.
-Chirp 3 calls are sync Recognize only (hard rule 14).
+Chirp 3 calls are sync Recognize (hard rule 14: never batch).
 
 Run: uv run python 02_stt_bench.py [--limit 3] [--sets guide,yue] [--runs chirp3-cmn]
 """
@@ -52,7 +54,8 @@ def runs_for(set_name: str, openai_models: list[str]) -> dict[str, tuple]:
             runs[f"openai-{model}"] = ("openai", model, ["cmn-Hans-CN"], True)
     elif set_name in ("yue", "en"):
         # Family mode can't tell the fallback which language is coming, so no hint.
-        runs[f"openai-{openai_models[0]}"] = ("openai", openai_models[0], [], False)
+        for model in openai_models:
+            runs[f"openai-{model}"] = ("openai", model, [], False)
     return runs
 
 

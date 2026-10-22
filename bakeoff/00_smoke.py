@@ -8,13 +8,15 @@ Run: uv run python 00_smoke.py [--only stt,llm,mt,tts]
 """
 
 import argparse
+import io
 import traceback
+import wave
 
 from lib import config
 from lib.llm import ChatClient, reasoning_tokens, translation_messages
 from lib.mt import CloudTranslate
 from lib.scoring import colloquial_score, parse_json_object
-from lib.stt import GoogleStt, OpenAiStt
+from lib.stt import GoogleStreamingStt, GoogleStt, OpenAiStt
 from lib.tts import GoogleTts
 
 MANDARIN = "大家好，我们现在到了洪崖洞，晚上七点以后灯会全部亮起来。"
@@ -93,6 +95,18 @@ def stt_checks(cfg: dict, tts_client: GoogleTts) -> None:
 
         hint = " + glossary hints" if hints else ""
         check(f"Chirp 3 on {source} audio, {languages}{hint}", run)
+
+    streaming = GoogleStreamingStt(cfg["stt"]["google"], config.project())
+    for source in ("cmn", "yue"):
+
+        def run_stream(source=source):
+            with wave.open(io.BytesIO(audio[source])) as w:
+                pcm = w.readframes(w.getnframes())
+            r = streaming.stream(pcm, ["cmn-Hans-CN", "yue-Hant-HK"], phrases)
+            print(f"  end of speech -> final: {r.finalize_latency_s:.2f}s  {r.text}")
+            assert r.finals, "no final transcript"
+
+        check(f"Chirp 3 streaming on {source} audio, Guide mode", run_stream)
 
     for model in cfg["stt"]["openai"]["models"]:
         for source, languages in (("cmn", ["cmn-Hans-CN"]), ("yue", ["yue-Hant-HK"])):

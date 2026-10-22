@@ -39,7 +39,8 @@ class ChatClient:
         self.model = entry["model"]
         self.params = entry.get("params") or {}
         self.json_mode = provider.get("json_mode")
-        self.temperature = llm.get("temperature")
+        self.temperature = entry.get("temperature", llm.get("temperature"))
+        self.top_p = entry.get("top_p")
         self._auth = provider["auth"]
         self._google_creds = None
         api_key = None if self._auth == "google" else os.environ.get(self._auth)
@@ -65,6 +66,8 @@ class ChatClient:
         kwargs = {"model": self.model, "messages": messages, "extra_body": self.params}
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
+        if self.top_p is not None:
+            kwargs["top_p"] = self.top_p
         if self.json_mode == "json_object":
             kwargs["response_format"] = {"type": "json_object"}
         client = self._client_with_auth()

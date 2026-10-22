@@ -112,3 +112,13 @@ def test_cantonese_char_count():
     chars = ["哋", "唔", "喺", "嘅", "咗", "冇", "佢"]
     assert scoring.cantonese_char_count("我哋而家去食重庆火锅,你哋想唔想食辣啲?", chars) == 3
     assert scoring.cantonese_char_count("大家好,我们现在到了洪崖洞。", chars) == 0
+
+
+def test_cantonese_share_per_sentence():
+    chars = ["哋", "唔", "喺", "嘅", "咗", "冇", "佢", "乜", "咩"]
+    # A Cantonese remark misheard by Chirp 3 (佢 -> 渠) still scores high.
+    assert scoring.cantonese_share("渠讲乜呀?我哋几点食饭?", chars) == pytest.approx(2 / 10)
+    # A guide sentence with one stray Cantonese character scores low.
+    guide = "等一下我们坐长江索道过江，排队可能要四十分钟左右，唔"
+    assert scoring.cantonese_share(guide, chars) < 0.05
+    assert scoring.cantonese_share("。", chars) == 0.0

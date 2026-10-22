@@ -75,9 +75,15 @@ def colloquial_score(text: str, scoring_cfg: dict) -> dict:
 
 
 def cantonese_char_count(text: str, chars: list[str]) -> int:
-    """How many Cantonese-only characters (哋, 唔, 喺 ...) a transcript contains. A candidate
-    junk-filter test for Guide mode: Mandarin narration should contain none."""
+    """How many Cantonese-only characters (哋, 唔, 喺 ...) a transcript contains."""
     return sum(text.count(ch) for ch in chars)
+
+
+def cantonese_share(text: str, chars: list[str]) -> float:
+    """Share of a sentence's characters that are Cantonese-only. Junk-filter layer 2 drops a
+    Guide-mode sentence above a threshold; Mandarin narration should score 0."""
+    length = len(strip_punct(text))
+    return cantonese_char_count(text, chars) / length if length else 0.0
 
 
 def simplified_chars(text: str) -> list[str]:

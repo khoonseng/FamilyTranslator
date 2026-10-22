@@ -77,19 +77,27 @@ def effort_rank(name: str, cfg: dict) -> int:
     return _EFFORT_RANK.get(str(effort), 3)
 
 
+def quality_key(name: str, scores: dict) -> tuple:
+    """Higher is better: colloquial share, then fewer Simplified characters, then speed."""
+    s = scores[name]
+    return (round(s["ratio"] or 0, 6), -s["simplified"], -(s["total"] or 99))
+
+
 def pick_setting(members: list[str], scores: dict, cfg: dict, margin: float) -> str:
-    """One finalist per model. The lowest reasoning setting is the default (hard rule 6);
-    another setting wins only if its colloquial share is better by more than `margin`.
-    Fewer Simplified characters break a tie."""
-    by_preference = sorted(
-        members,
-        key=lambda n: (effort_rank(n, cfg), scores[n]["reasoning"] or 0, scores[n]["total"] or 99),
-    )
-    default = by_preference[0]
-    best = max(
-        by_preference,
-        key=lambda n: (round(scores[n]["ratio"] or 0, 6), -scores[n]["simplified"]),
-    )
+    """One finalist per model.
+
+    1. Within each reasoning level, the best sampling setting (temperature) simply wins.
+    2. Across reasoning levels, the lowest level is the default (hard rule 6); a higher level
+       wins only if its colloquial share is better by more than `margin`."""
+    by_level: dict[int, str] = {}
+    for name in members:
+        level = effort_rank(name, cfg)
+        if level not in by_level or quality_key(name, scores) > quality_key(
+            by_level[level], scores
+        ):
+            by_level[level] = name
+    default = by_level[min(by_level)]
+    best = max(by_level.values(), key=lambda n: quality_key(n, scores))
     gain = (scores[best]["ratio"] or 0) - (scores[default]["ratio"] or 0)
     return best if gain > margin else default
 
