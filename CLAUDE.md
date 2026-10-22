@@ -95,8 +95,8 @@ Build order:
    - Typed text (hub or listener) may be language-detected; this rule covers speech only.
    - In Guide mode, a three-layer junk filter drops speech that isn't the guide before translation.
      It is a filter, never a router: (1) the mic sits close to the guide (spare hub phone or
-     clip-on); (2) STT receives `cmn-Hans-CN` and `yue-Hant-HK`, and results labelled Cantonese
-     are dropped; (3) very short transcripts and filler (嗯, 啊, 對) are dropped. Chirp 3 has no
+     clip-on); (2) STT receives `cmn-Hans-CN` and `yue-Hant-HK`, and a chunk is dropped when more
+     than half of its characters are labelled Cantonese; (3) very short transcripts and filler (嗯, 啊, 對) are dropped. Chirp 3 has no
      usable confidence score, so confidence is never a filter.
    - Tint the whole hub screen per mode so the current mode is unmistakable.
    - Capture from the phone's default audio input (`getUserMedia`), so a wired/USB-C clip-on mic
@@ -325,3 +325,5 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   rules 4 and 6 are unchanged unless it is adopted. The Google Translate app's early cut-off
   after short pauses is the app's own listening logic and doesn't affect the API.
 - 2026-10-14 — Colloquial-marker list unified: 佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢.
+- 2026-10-22 — Junk-filter layer 2 drops a chunk when more than half of its characters are
+  labelled Cantonese. Owner approved the bake-off glossary and narration sentences.

@@ -68,7 +68,7 @@ Why not Khoon Seng's phone: on iOS, Safari stops the mic as soon as he switches 
 With the mic open all day, the hub also hears family chatter, other guides, vendors and the car radio. Speech-to-text, told to expect Mandarin, would turn all of it into garbled transcripts that play as nonsense Cantonese. The filter drops such speech before translation. It never chooses the pipeline; Guide mode stays Guide mode.
 
 1. **Mic close to the guide.** The spare phone on the guide's lanyard (or a clip-on) makes the guide far louder than anyone else. This is the main defence and the only one that helps against other Mandarin speakers nearby.
-2. **Drop speech labelled Cantonese.** Speech-to-text receives `cmn-Hans-CN` and `yue-Hant-HK`; results labelled Cantonese are discarded. The bake-off measures how often accented guide speech is wrongly dropped.
+2. **Drop speech labelled Cantonese.** Speech-to-text receives `cmn-Hans-CN` and `yue-Hant-HK`; a chunk is discarded when more than half of its characters are labelled Cantonese (decided 22 Oct), so a Mandarin sentence with a stray Cantonese word survives. The bake-off measures how often accented guide speech is wrongly dropped.
 3. **Drop fragments.** Very short transcripts and filler (嗯, 啊, 對) are discarded.
 
 Chirp 3 returns no usable confidence score, so confidence is not part of the filter.
