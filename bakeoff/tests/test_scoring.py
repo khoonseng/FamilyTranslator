@@ -106,3 +106,9 @@ def test_parse_json_object(reply):
 def test_parse_json_object_rejects_garbage():
     assert scoring.parse_json_object("no json here") is None
     assert scoring.parse_json_object("{not json}") is None
+
+
+def test_cantonese_char_count():
+    chars = ["哋", "唔", "喺", "嘅", "咗", "冇", "佢"]
+    assert scoring.cantonese_char_count("我哋而家去食重庆火锅,你哋想唔想食辣啲?", chars) == 3
+    assert scoring.cantonese_char_count("大家好,我们现在到了洪崖洞。", chars) == 0

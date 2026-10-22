@@ -327,3 +327,7 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
 - 2026-10-14 — Colloquial-marker list unified: 佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢.
 - 2026-10-22 — Junk-filter layer 2 drops a chunk when more than half of its characters are
   labelled Cantonese. Owner approved the bake-off glossary and narration sentences.
+- 2026-10-22 — Smoke test passed on the new project. Gemini 3.6 Flash's lowest reasoning
+  setting is `minimal` (no `none`). Qwen3.8-27B on Groq does no reasoning at either setting,
+  so it runs once. Colloquial markers extended with common spoken words (哋, 嚟, 而家, 嗰, 畀,
+  啱, 咁, 喇, 囉, 喎, 乜, 點解, 邊度, 晒); the original list missed 我哋而家嚟到.

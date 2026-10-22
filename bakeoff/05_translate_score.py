@@ -67,7 +67,7 @@ def score_config(rows: list[dict], cfg: dict) -> dict:
     }
 
 
-_EFFORT_RANK = {"none": 0, "minimal": 1, "low": 2, "default": 3, "medium": 3, "high": 4}
+_EFFORT_RANK = {"none": 0, "minimal": 1, "low": 2, "default": 3, "medium": 3, "high": 4, "max": 5}
 
 
 def effort_rank(name: str, cfg: dict) -> int:

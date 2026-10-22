@@ -74,6 +74,12 @@ def colloquial_score(text: str, scoring_cfg: dict) -> dict:
     }
 
 
+def cantonese_char_count(text: str, chars: list[str]) -> int:
+    """How many Cantonese-only characters (哋, 唔, 喺 ...) a transcript contains. A candidate
+    junk-filter test for Guide mode: Mandarin narration should contain none."""
+    return sum(text.count(ch) for ch in chars)
+
+
 def simplified_chars(text: str) -> list[str]:
     """Characters that only exist in Simplified form (they change under Simplified→Traditional).
     Heuristic: a few characters valid in both scripts (e.g. 后) are also flagged."""

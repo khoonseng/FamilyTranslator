@@ -13,7 +13,7 @@ Run: uv run python 03_stt_score.py
 from lib import config
 from lib.config import OUT
 from lib.records import median, percentile, read_csv, read_jsonl
-from lib.scoring import char_edits, colloquial_score
+from lib.scoring import cantonese_char_count, char_edits, colloquial_score
 
 SCRIPT = {"guide": "simplified", "yue": "traditional", "en": "simplified"}
 FILTER_RUN = "chirp3-cmn+yue"
@@ -69,15 +69,35 @@ def main() -> None:
                 f"{fmt(median(latencies))} | {fmt(percentile(latencies, 90))} |"
             )
 
-    lines += ["", "## Junk filter (layer 2: drop results labelled Cantonese)", ""]
-    for set_name, meaning in (
-        ("guide", "real guide speech wrongly dropped (want ~0%)"),
-        ("chatter", "family chatter correctly dropped (want ~100%)"),
-    ):
-        rows = [r for (_, run), r in records.items() if run == FILTER_RUN and r["set"] == set_name]
-        dropped = sum(bool(r["labelled_cantonese"]) for r in rows)
-        rate = fmt(dropped / len(rows) if rows else None, "{:.0%}")
-        lines.append(f"- {set_name}: {dropped}/{len(rows)} dropped ({rate}) - {meaning}")
+    # Two candidate tests for junk-filter layer 2, both on the Mandarin + Cantonese run:
+    # Chirp 3's language label, and Cantonese-only characters in the transcript.
+    cantonese_chars = cfg["scoring"]["cantonese_only_chars"]
+    tests = {"labelled Cantonese (>50% of characters)": lambda r: bool(r["labelled_cantonese"])}
+    for n in (1, 2, 3):
+        tests[f"≥{n} Cantonese-only character(s)"] = lambda r, n=n: (
+            cantonese_char_count(r["text"], cantonese_chars) >= n
+        )
+    lines += [
+        "",
+        "## Junk filter layer 2: candidate tests",
+        "",
+        "Want: guide speech wrongly dropped ≈ 0%, family chatter correctly dropped ≈ 100%.",
+        "",
+        "| Test | Guide speech dropped | Chatter dropped |",
+        "| --- | --- | --- |",
+    ]
+    by_set = {
+        s: [r for (_, run), r in records.items() if run == FILTER_RUN and r["set"] == s]
+        for s in ("guide", "chatter")
+    }
+    for label, test in tests.items():
+        cells = []
+        for s in ("guide", "chatter"):
+            rows = by_set[s]
+            dropped = sum(test(r) for r in rows)
+            rate = fmt(dropped / len(rows) if rows else None, "{:.0%}")
+            cells.append(f"{dropped}/{len(rows)} ({rate})")
+        lines.append(f"| {label} | {cells[0]} | {cells[1]} |")
 
     lines += [
         "",

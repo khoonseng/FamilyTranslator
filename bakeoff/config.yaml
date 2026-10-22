@@ -45,22 +45,22 @@ llm:
       auth: GROQ_API_KEY
       json_mode: json_object
   configs:
-    gemini-off:
+    # Gemini 3.6 Flash on Vertex accepts minimal | low | medium | high | max; `minimal` is its
+    # "off" (smoke test 2026-10-22: no reasoning tokens).
+    gemini-minimal:
       provider: vertex
-      model: google/gemini-3.6-flash          # verify exact ID on Vertex
-      params: {reasoning_effort: none}        # verify: Gemini 3.x may only allow `minimal`
+      model: google/gemini-3.6-flash
+      params: {reasoning_effort: minimal}
     gemini-low:
       provider: vertex
       model: google/gemini-3.6-flash
       params: {reasoning_effort: low}
+    # Qwen3.8-27B on Groq produced no reasoning even with reasoning_effort=default, so a
+    # second "reasoning on" config would only repeat this one and spend Groq's daily quota.
     qwen-off:
       provider: groq
       model: qwen/qwen3.8-27b
       params: {reasoning_effort: none}
-    qwen-default:
-      provider: groq
-      model: qwen/qwen3.8-27b
-      params: {reasoning_effort: default, reasoning_format: hidden}
     gptoss-low:
       provider: groq
       model: openai/gpt-oss-120b
@@ -70,8 +70,14 @@ llm:
   context_sentences: 2          # previous source sentences sent as context (hard rule 7)
 
 scoring:
-  # Colloquial Cantonese markers (unified list, 2026-10-14).
-  colloquial_markers: [佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢]
+  # Colloquial Cantonese markers: the 2026-10-14 list plus common spoken words it missed
+  # (2026-10-22: 我哋而家嚟到洪崖洞 scored zero markers on the original list).
+  colloquial_markers: [佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢,
+                       哋, 嚟, 而家, 嗰, 畀, 啱, 咁, 喇, 囉, 喎, 乜, 點解, 邊度, 晒]
+  # Characters that occur in written Cantonese but practically never in Mandarin transcripts.
+  # Candidate junk-filter test (see 03_stt_score.py): Chirp 3's language labels didn't flag
+  # Cantonese speech as Cantonese in the smoke test.
+  cantonese_only_chars: [哋, 唔, 喺, 嘅, 咗, 冇, 佢, 嚟, 啲, 嘢, 嗰, 乜, 囉, 喎]
   # Formal written-Chinese forms that colloquial Cantonese replaces (他→佢, 的→嘅, 是→係 ...).
   # Matched longest first, so 他們 counts once, not as 他 + 們.
   formal_markers: [他們, 她們, 他, 她, 它, 們, 的, 是, 在, 沒有, 沒, 這, 那, 什麼, 怎麼, 不]
