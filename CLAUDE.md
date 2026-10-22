@@ -36,7 +36,8 @@ Only two audio channels exist: Cantonese (listeners) and Mandarin (hub speaker).
 1. Hub = a spare phone the guide carries on a lanyard, with its own eSIM or SIM; the owner's
    phone is the fallback hub. **Guide** latches into continuous listening; client-side VAD splits
    speech at pauses. **Family** (phase 2) is tapped for replies, then back to Guide.
-2. Cloud Run receives audio → STT in the language set by the mode.
+2. Cloud Run receives audio → STT in the language set by the mode. Target design (pending the
+   week-1 test): the hub streams audio and the server keeps one Chirp 3 streaming session.
 3. ONE translation LLM call per sentence returns JSON with the target languages only (`yue`, `en`
    for guide speech; `zh_hans` added for family speech). The source language is the transcript
    itself, never regenerated. The field TTS needs comes first.
@@ -84,6 +85,9 @@ Build order:
      (`gpt-oss-120b`: low), as per-provider config. STT and TTS have no reasoning setting. The
      bake-off checks that this doesn't hurt translation quality; if it does, use the lowest
      setting that wins.
+   - Sampling settings (temperature, top-p) are per-model config. Gemini 3 stays at temperature
+     1.0, as Google strongly recommends (lower can loop or degrade output); Qwen and gpt-oss use
+     whichever of 0.2 or their makers' recommended values wins the bake-off.
 7. All provider calls are stateless. Translation context = glossary + last 2–3 utterances, never
    the whole session.
 8. Input language comes from the hub mode (Guide / Family). Never auto-detect Mandarin vs
@@ -95,9 +99,13 @@ Build order:
    - Typed text (hub or listener) may be language-detected; this rule covers speech only.
    - In Guide mode, a three-layer junk filter drops speech that isn't the guide before translation.
      It is a filter, never a router: (1) the mic sits close to the guide (spare hub phone or
-     clip-on); (2) STT receives `cmn-Hans-CN` and `yue-Hant-HK`, and a chunk is dropped when more
-     than half of its characters are labelled Cantonese; (3) very short transcripts and filler (嗯, 啊, 對) are dropped. Chirp 3 has no
-     usable confidence score, so confidence is never a filter.
+     clip-on); (2) STT receives `cmn-Hans-CN` and `yue-Hant-HK` (with Mandarin alone, Chirp 3
+     rewrites Cantonese speech as fluent Mandarin), the transcript is split into sentences, and a
+     sentence is dropped when Cantonese-only characters (哋, 唔, 喺, 嘅, 咗, 冇, 佢, 嚟, 啲, 嘢, 嗰,
+     乜, 囉, 喎, 咩, 咁) exceed a share of its characters set by the bake-off (starting point
+     15–20%); (3) very short transcripts and filler (嗯, 啊, 對) are dropped. Neither Chirp 3's
+     language labels (it labelled Cantonese speech as Mandarin) nor confidence scores (it has
+     none usable) are ever a filter.
    - Tint the whole hub screen per mode so the current mode is unmistakable.
    - Capture from the phone's default audio input (`getUserMedia`), so a wired/USB-C clip-on mic
      works if one is added later. Do not build Bluetooth mic support.
@@ -109,6 +117,12 @@ Build order:
    - **Sentence** (one audio clip): split from the transcript at punctuation.
    - **Bubble** (one voice note): a new bubble starts after a pause longer than 2 s, or when the
      current one reaches 45 s of audio or 6 sentences. Chunks never wait for the 2 s pause.
+   - **Target, pending the week-1 streaming test (decided 2026-10-23):** Chirp 3 streaming. The
+     hub streams speech audio while Guide is latched (VAD still holds back long silences); the
+     server keeps one Chirp 3 stream, renewed at a pause before Google's 5-minute limit, and
+     splits Chirp 3's final transcripts into sentences. The hub's VAD pauses still cut the saved
+     audio into segments, which the OpenAI fallback transcribes if the stream fails. This rule
+     is rewritten once `bakeoff/02b_stt_streaming.py` confirms the latency and accuracy.
 10. Replays never call TTS again: clips are cached on the phone (IndexedDB) and in Cloud Storage.
 11. Listener playback rules (see architecture doc, "Listener experience"):
     - Live (default): new clips auto-play in order and are marked `played`.
@@ -159,7 +173,7 @@ AI providers (all must meet hard rule 14; the week-1 bake-off confirms or promot
 
 | Stage | Primary | Fallback (in order) |
 | --- | --- | --- |
-| STT | Google Speech-to-Text V2 `chirp_3` (sync): `cmn-Hans-CN`, `yue-Hant-HK`, `en-US`; glossary as phrase biasing | OpenAI `gpt-4o-mini-transcribe` (bake-off also tries `gpt-4o-transcribe` on accented Mandarin) |
+| STT | Google Speech-to-Text V2 `chirp_3`, streaming (target; sync until week 1 confirms): `cmn-Hans-CN` + `yue-Hant-HK` in Guide mode, `yue-Hant-HK` + `en-US` in Family mode; glossary as phrase biasing | One OpenAI model on the saved audio segments, `gpt-4o-transcribe` or `gpt-transcribe`, chosen by the bake-off |
 | Translation LLM | Chosen by 15 Nov (rule below): Gemini 3.6 Flash on Vertex AI, or Groq | The other one. Groq candidates: `qwen/qwen3.8-27b` (Preview), `openai/gpt-oss-120b` (Production) |
 | Translation, bake-off candidate | Google Cloud Translation v3 (NMT, text only; `yue` supported) | Role decided after the bake-off: none, last-resort fallback, or main. Adopting it means rewording hard rules 4 and 6 (owner approval) |
 | TTS | Google Chirp 3 HD voices, Cantonese and Mandarin | Google's older non-Chirp voices |
@@ -174,7 +188,9 @@ Primary translation model rule (both providers stay configured, each the other's
 Not used: Azure (one cloud only), self-hosted or on-device models (no wav2vec, no Hugging
 Face weights), Groq TTS (no Chinese voices), the Gemini API / AI Studio free tier (fails ZDR),
 Alibaba Model Studio incl. Qwen3-TTS (ZDR for enterprise customers only), Google Media
-Translation API (shut down in 2024), the Google Translate app (no API).
+Translation API (shut down in 2024), the Google Translate app (no API), OpenAI
+`gpt-live-transcribe` (Realtime API only, which keeps data 30 days for abuse monitoring unless
+OpenAI approves ZDR; revisit only as a Chirp 3 replacement, never as a fallback).
 
 ## Billing and plans
 
@@ -225,13 +241,14 @@ Dockerfile
 - [ ] Week 1 — Bake-off: scripts only, no app. Translate 10–15 Mandarin narration sentences with
       2–3 LLMs × 2–3 Cantonese voices for a blind test; score Cantonese STT on the family's
       recordings; deploy a test service to `us-central1` and measure time-to-first-audio.
-      Run each translation model with reasoning off and on its lowest setting.
-      Google Cloud Translation is tested alongside the LLMs as a candidate.
+      Run each translation model with reasoning off and on its lowest setting, and Qwen and
+      gpt-oss at two temperatures. Google Cloud Translation is tested alongside the LLMs.
       Score every model's `yue` output for colloquial markers (佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢) and
       confirm each voice is a true yue-HK voice, not a Mandarin voice reading Traditional text.
-      Score Mandarin STT (Chirp 3, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe`) on 15–20
-      Chongqing-accented, fast narration clips, and measure how often the Cantonese-label junk
-      filter drops real guide speech. Test on the family's iPhones whether listener audio keeps
+      Score Mandarin STT (Chirp 3 sync and streaming, `gpt-4o-transcribe`, `gpt-transcribe`) on
+      15–20 Chongqing-accented, fast narration clips; measure streaming's end-of-speech-to-text
+      delay; and set the junk filter's Cantonese-character share from how often it drops real
+      guide sentences vs family chatter. Test on the family's iPhones whether listener audio keeps
       playing with the screen locked. Enable billing with a budget alert; send Google both ZDR
       requests (Vertex AI abuse-monitoring exception; written confirmation of Text-to-Speech retention).
 - [ ] Weeks 2–3 — Single-device MVP, guide → family: hub records Mandarin (or takes typed
@@ -327,7 +344,19 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
 - 2026-10-14 — Colloquial-marker list unified: 佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢.
 - 2026-10-22 — Junk-filter layer 2 drops a chunk when more than half of its characters are
   labelled Cantonese. Owner approved the bake-off glossary and narration sentences.
+  (Junk-filter rule superseded on 2026-10-23, see below.)
 - 2026-10-22 — Smoke test passed on the new project. Gemini 3.6 Flash's lowest reasoning
   setting is `minimal` (no `none`). Qwen3.8-27B on Groq does no reasoning at either setting,
   so it runs once. Colloquial markers extended with common spoken words (哋, 嚟, 而家, 嗰, 畀,
   啱, 咁, 喇, 囉, 喎, 乜, 點解, 邊度, 晒); the original list missed 我哋而家嚟到.
+- 2026-10-23 — Junk-filter layer 2 is a per-sentence share of Cantonese-only characters, set by
+  the bake-off. Supersedes the 2026-10-22 label rule: Chirp 3 labelled Cantonese speech as
+  Mandarin in any language order, and with Mandarin alone it rewrote Cantonese as Mandarin.
+- 2026-10-23 — Chirp 3 streaming is the target STT design, confirmed by the week-1 streaming
+  test before hard rule 9 changes. First synthetic test: final transcript ~0.8–1.0 s after each
+  sentence's audio, ~1.7–2.0 s after the speaker stops; "short" endpointing split mid-word.
+- 2026-10-23 — STT fallback is one OpenAI model on the saved audio, `gpt-4o-transcribe` or
+  `gpt-transcribe` (bake-off decides). `gpt-live-transcribe` is not used: the Realtime API keeps
+  data 30 days unless OpenAI approves ZDR, and a streaming fallback adds little for its cost.
+- 2026-10-23 — Sampling per model: Gemini 3 at temperature 1.0 (Google's guidance); Qwen and
+  gpt-oss tested at 0.2 and at their makers' recommended values.

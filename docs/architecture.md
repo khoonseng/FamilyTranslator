@@ -68,7 +68,7 @@ Why not Khoon Seng's phone: on iOS, Safari stops the mic as soon as he switches 
 With the mic open all day, the hub also hears family chatter, other guides, vendors and the car radio. Speech-to-text, told to expect Mandarin, would turn all of it into garbled transcripts that play as nonsense Cantonese. The filter drops such speech before translation. It never chooses the pipeline; Guide mode stays Guide mode.
 
 1. **Mic close to the guide.** The spare phone on the guide's lanyard (or a clip-on) makes the guide far louder than anyone else. This is the main defence and the only one that helps against other Mandarin speakers nearby.
-2. **Drop speech labelled Cantonese.** Speech-to-text receives `cmn-Hans-CN` and `yue-Hant-HK`; a chunk is discarded when more than half of its characters are labelled Cantonese (decided 22 Oct), so a Mandarin sentence with a stray Cantonese word survives. The bake-off measures how often accented guide speech is wrongly dropped.
+2. **Drop sentences written in Cantonese** (decided 23 Oct). Speech-to-text receives both `cmn-Hans-CN` and `yue-Hant-HK`. With Mandarin alone, Chirp 3 rewrote Cantonese speech as fluent Mandarin, so chatter would pass as guide speech. With both, Cantonese words survive in the text (我哋, 唔, 喺). The transcript is split into sentences, and a sentence is dropped when Cantonese-only characters (哋, 唔, 喺, 嘅, 咗, 冇, 佢, 嚟, 啲, 嘢, 嗰, 乜, 囉, 喎, 咩, 咁) make up more than a set share of it. The bake-off sets that share from how often it drops real guide sentences versus family chatter; the starting point is 15–20%. A Cantonese remark in a pause becomes its own sentence and is dropped, while a guide sentence with one stray 唔 survives. Chirp 3's language labels can't be used: in the smoke test it labelled Cantonese speech as Mandarin in every language order.
 3. **Drop fragments.** Very short transcripts and filler (嗯, 啊, 對) are discarded.
 
 Chirp 3 returns no usable confidence score, so confidence is not part of the filter.
@@ -162,7 +162,7 @@ Google Cloud is the primary provider for every stage, each stage has a fallback 
 
 | Stage | Primary | Fallback | Notes |
 | --- | --- | --- | --- |
-| STT, Mandarin, Cantonese and English | Google Speech-to-Text V2, `chirp_3` model, sync requests only: cmn-Hans-CN (GA), yue-Hant-HK (Preview), en-US. Runs only in the `us` and `eu` multi-regions. The glossary is also passed as phrase biasing | OpenAI `gpt-4o-mini-transcribe` | Bake-off scores all candidates, plus `gpt-4o-transcribe`, on Chongqing-accented, fast narration; the order may flip. It also checks that the fallback doesn't return Mandarin-style text for Cantonese speech |
+| STT, Mandarin, Cantonese and English | Google Speech-to-Text V2, `chirp_3` model, **streaming** (target, confirmed by the week-1 test; sync meanwhile): cmn-Hans-CN (GA), yue-Hant-HK (Preview), en-US. Runs only in the `us` and `eu` multi-regions. The glossary is also passed as phrase biasing | One OpenAI model run on the saved audio segments: `gpt-4o-transcribe` (US$0.006/min) or `gpt-transcribe` (US$0.0045/min), chosen by the bake-off | Bake-off scores all candidates on Chongqing-accented, fast narration, and checks that the fallback doesn't return Mandarin-style text for Cantonese speech. Chirp 3 costs US$0.016/min after 60 free minutes a month, so the trip's ~900 minutes cost about US$13 or come out of Google's free-trial credit |
 | Translation LLM | Decided by 15 Nov using the rule below: Gemini 3.6 Flash on **Vertex AI**, or Groq | The other of the two. Groq candidates: `qwen/qwen3.8-27b` (Preview) and `openai/gpt-oss-120b` (Production) | All candidates pass the same blind test and colloquial-marker check, in both directions |
 | Translation, bake-off candidate | Google Cloud Translation v3, standard (NMT) model, text only: `zh-CN` → `yue`, `en`; `yue`, `en` → `zh-CN` | Role decided after the bake-off: none, last-resort fallback, or main translator | Same blind test and colloquial-marker check as the LLMs. See "Google Cloud Translation" below |
 | TTS, Cantonese and Mandarin | Google Chirp 3 HD voices (Cantonese yue-HK in Preview), one non-streaming request per sentence returning MP3 | Google's older non-Chirp voices | In-laws' blind listening test picks the voices. MP3 because it plays on every iPhone; Ogg Opus support in iOS Safari is unconfirmed, and per-sentence clips gain little from streaming |
@@ -171,6 +171,8 @@ Google Cloud is the primary provider for every stage, each stage has a fallback 
 **Adapters and credentials.** The translation adapter is a single OpenAI-compatible client, configured per provider with a base URL, model and key, so switching between Gemini and Groq is a config change. STT and TTS adapters are provider-specific. On Cloud Run, Google's speech APIs and Gemini on Vertex AI authenticate with the service account, so they need no API keys; only the Groq and OpenAI keys live in Secret Manager. Groq's lineup changes quickly (Qwen3.6-27B was replaced by Qwen3.8-27B within weeks), so model IDs live in config and are re-checked before the trip.
 
 **Translation call design.** One LLM call per sentence returns the target languages as JSON, never the source language: guide speech returns `yue` (and `en` once English is added), and family speech in phase 2 returns `zh_hans` plus whichever of `yue` or `en` wasn't spoken. The transcript itself is the source-language text, so the model can't reword what was said, and fewer output tokens means less waiting. The field TTS needs comes first and is streamed, so TTS can start as soon as it closes. The prompt carries a glossary of Chongqing place and dish names (解放碑, 洪崖洞, 磁器口, 毛血旺) and only the last 2–3 utterances as context.
+
+**Sampling settings.** Temperature and top-p are set per model in config. They change how the model picks words: low means consistent and literal, high means more varied wording with more risk of errors. Gemini 3 stays at temperature 1.0, because Google strongly recommends its default and warns that lower values can cause looping or worse output. Qwen and gpt-oss run in the bake-off at 0.2 and at their makers' recommended values (Qwen 0.7 with top-p 0.8; gpt-oss 1.0 with top-p 1.0), and the better-scoring setting is kept. Cloud Translation, Chirp 3 and the voices have no such settings.
 
 **Reasoning off.** Reasoning ("thinking" before answering) is switched off on the translation model, or set to its lowest level where it can't be switched off (`gpt-oss-120b`: low), through per-provider config. For one sentence with a glossary it rarely improves quality and adds one to several seconds. Speech-to-text and text-to-speech have no reasoning setting and are unaffected. The bake-off runs each model both ways; if "off" loses noticeably in the blind test or the colloquial-marker score, the lowest setting that wins is used.
 
@@ -192,7 +194,17 @@ Google Cloud is the primary provider for every stage, each stage has a fallback 
 
 **Failover.** If a provider errors or is too slow on a sentence, the adapter retries that sentence on the standby. As a last resort the app shows the text and flags the hub operator to interpret (unless Cloud Translation is adopted as the last fallback).
 
-**Ruled out.** OpenAI GPT-Realtime-Translate (no Cantonese output voice), conversational realtime models (an assistant, not an interpreter), Groq TTS (no Chinese voices, and Groq does not host Qwen3-TTS), the Gemini API free tier in AI Studio (prompts may be used to improve Google's models, so it fails ZDR), Qwen3-TTS on Alibaba Model Studio (ZDR only for enterprise customers, and flagged content can be kept for up to 2 years) and Azure Speech (kept to one cloud provider). OpenAI's API has no free tier, so it serves only as a paid STT fallback.
+**Ruled out.** OpenAI GPT-Realtime-Translate (no Cantonese output voice), conversational realtime models (an assistant, not an interpreter), Groq TTS (no Chinese voices, and Groq does not host Qwen3-TTS), the Gemini API free tier in AI Studio (prompts may be used to improve Google's models, so it fails ZDR), Qwen3-TTS on Alibaba Model Studio (ZDR only for enterprise customers, and flagged content can be kept for up to 2 years) and Azure Speech (kept to one cloud provider). OpenAI's API has no free tier, so it serves only as a paid STT fallback. OpenAI `gpt-live-transcribe` (US$0.017/min) streams, but only through the Realtime API, which keeps data for 30 days for abuse monitoring unless OpenAI approves zero data retention. A streaming fallback would also add little: it only covers a Chirp 3 outage, and the file-based fallback answered a 5-second clip in about 1–2 s. It would be reconsidered only as a Chirp 3 replacement, and only if OpenAI confirms zero retention in writing.
+
+**Streaming speech-to-text (target design, decided 23 Oct; confirmed by the week-1 test)**
+
+Non-streaming Chirp 3 took about 3 s to transcribe a 5-second clip, on top of about 0.7 s of pause detection and the upload: too slow for the 2–4 s target. Streaming transcribes while the guide talks. Our design never lost speech at pauses, because Guide mode stays latched; streaming is about speed and whole sentences.
+
+- **Hub:** sends speech audio over its WebSocket while Guide is latched. The browser VAD still holds back long silences, which saves money because Chirp 3 bills per second of audio. Its pauses also cut the saved audio into segments for the fallback.
+- **Server:** keeps one Chirp 3 stream open. Google's limits: a stream lasts at most 5 minutes (the server starts a new one at a pause before then), each message carries at most 25 KB, and audio must arrive at real-time pace. Chirp 3's final transcripts are split into sentences at punctuation, filtered (junk filter) and translated one by one.
+- **Fallback:** if the stream fails, the saved segments go to the OpenAI fallback model as files.
+- **First synthetic test (23 Oct, laptop in Singapore):** each sentence's final transcript arrived 0.8–1.0 s after its audio, about 1.7–2.0 s after the speaker stopped, because Chirp 3 first waits for a short silence. "Standard" endpointing kept sentences whole; "short" split mid-word ("排队可能要40分" / "钟左右"), so standard is the default.
+- **Still to confirm** with real guide recordings (`bakeoff/02b_stt_streaming.py`): accuracy against the sync runs, delay on real narration, and how Chirp 3 splits continuous speech. Hard rule 9 is rewritten once these hold.
 
 ## Data retention (ZDR) and the primary translation model
 
@@ -330,8 +342,9 @@ The target is about 2–4 seconds from end of sentence to translated audio, at a
 
 | Step | Expected time |
 | --- | --- |
-| VAD waits for the pause that ends a chunk | 0.6–0.8 s |
-| STT on one sentence | 0.5–1.5 s |
+| VAD waits for the pause that ends a chunk (non-streaming only) | 0.6–0.8 s |
+| STT on one sentence, non-streaming (measured 23 Oct from a Singapore laptop: ~3 s for a 5 s clip) | ~3 s |
+| STT, streaming: end of speech to final transcript (first synthetic test, 23 Oct) | ~1.7–2.0 s |
 | Translation LLM, first sentence streamed | 0.5–1 s |
 | TTS, first audio bytes | 0.5–1 s |
 | Roaming path and the Singapore–`us-central1` crossing | 0.3–0.6 s |
@@ -426,12 +439,13 @@ The biggest risks are audio capture and Cantonese quality, not hosting.
 | Street noise, guide far from the hub | Poor STT | Spare hub phone on the guide's lanyard; add a clip-on mic for the guide only if the field test shows it is needed |
 | No spare phone, so Khoon Seng's phone is the hub | Mic stops whenever he switches apps (iOS) | "Tap to resume listening" banner; speech in between is lost. Get a spare phone and data line before field tests |
 | Hub mic re-captures its own speaker output | Translation loop, as seen in Traverba | Half-duplex hub (no capture during playback), with browser echo cancellation as a second layer |
-| Family chatter while Guide mode is latched | Junk bubbles transcribed as Mandarin | Three-layer junk filter: mic close to the guide, drop speech labelled Cantonese, drop fragments; listeners on earphones |
-| Junk filter labels accented guide speech as Cantonese | Real narration silently dropped | Bake-off measures the false-drop rate on Chongqing-accented clips; if too high, disable layer 2 |
+| Family chatter while Guide mode is latched | Junk bubbles transcribed as Mandarin | Three-layer junk filter: mic close to the guide, drop sentences written in Cantonese, drop fragments; listeners on earphones |
+| Junk filter drops real guide sentences (e.g. accented speech written with Cantonese characters) | Real narration silently dropped | Bake-off sets the Cantonese-character share from real guide and chatter recordings; if no share separates them, raise it or disable layer 2 |
+| Non-streaming STT too slow (~3 s per clip) | Audio arrives well after the 2–4 s target | Chirp 3 streaming (target design); week-1 test confirms |
 | Fast, non-stop narration | Listeners drift further behind | Raise `speaking_rate` to about 1.1–1.25 when clips queue up |
 | Hub phone battery drains | Translation stops mid-tour | Car charger and power bank |
 | Bluetooth earbuds connected to the hub | Phone silently switches to the earbud mic | Keep the hub phone free of Bluetooth audio devices |
-| Chongqing-accented or fast Mandarin (the guide is likely to have both) | STT errors | Bake-off on 15–20 real Chongqing guide clips comparing Chirp 3, `gpt-4o-mini-transcribe` and `gpt-4o-transcribe`; glossary as phrase biasing; ask the guide for standard Putonghua |
+| Chongqing-accented or fast Mandarin (the guide is likely to have both) | STT errors | Bake-off on 15–20 real Chongqing guide clips comparing Chirp 3 (sync and streaming), `gpt-4o-transcribe` and `gpt-transcribe`; glossary as phrase biasing; ask the guide for standard Putonghua |
 | Translation slips into formal written Chinese or Mandarin grammar | Cantonese sounds wrong to the in-laws | Colloquial-Cantonese prompt; colloquial-marker check and blind bake-off |
 | iOS audio unlock and screen lock (every family phone is an iPhone) | Listener hears nothing once the screen locks or the phone is pocketed | Tap-to-start on join; Wake Lock API; week-1 test on the family's iPhones. If locked-screen playback fails, a fallback is a "radio mode": one continuous audio stream, which iOS keeps playing with the screen locked |
 | Tunnels and dead zones | Missed bubbles | Reconnect and backfill from the last utterance id |
@@ -464,7 +478,7 @@ gantt
   Chongqing trip             :a6, 2026-12-19, 5d
 ```
 
-1. **Week 1, Cantonese bake-off.** Run 10–15 recorded Mandarin narration sentences through 2–3 translation models and 2–3 Cantonese voices, blind, for the in-laws to judge. Score each Cantonese STT on their recorded questions. Google Cloud Translation runs alongside the LLMs as a candidate. Check every model's Cantonese for colloquial markers (佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢) and confirm each voice is a true yue-HK voice, not a Mandarin voice reading Traditional characters. Score Mandarin speech-to-text (Chirp 3, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe`) on 15–20 clips of Chongqing-accented, fast guide narration, and measure how often the Cantonese-label junk filter drops real guide speech. Run each translation model with reasoning off and on its lowest setting. Test on the family's iPhones whether listener audio keeps playing with the screen locked. Deploy a test service to `us-central1`, measure time-to-first-audio and confirm the eSIM's routing. Enable billing with a budget alert, and send Google both ZDR requests (the Vertex AI abuse-monitoring exception and written confirmation of Text-to-Speech retention).
+1. **Week 1, Cantonese bake-off.** Run 10–15 recorded Mandarin narration sentences through 2–3 translation models and 2–3 Cantonese voices, blind, for the in-laws to judge. Score each Cantonese STT on their recorded questions. Google Cloud Translation runs alongside the LLMs as a candidate. Check every model's Cantonese for colloquial markers (佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢) and confirm each voice is a true yue-HK voice, not a Mandarin voice reading Traditional characters. Score Mandarin speech-to-text (Chirp 3 sync and streaming, `gpt-4o-transcribe`, `gpt-transcribe`) on 15–20 clips of Chongqing-accented, fast guide narration; measure streaming's delay from end of speech to final transcript; and set the junk filter's Cantonese-character share from real guide sentences versus family chatter. Run each translation model with reasoning off and on its lowest setting, and Qwen and gpt-oss at two temperatures. Test on the family's iPhones whether listener audio keeps playing with the screen locked. Deploy a test service to `us-central1`, measure time-to-first-audio and confirm the eSIM's routing. Enable billing with a budget alert, and send Google both ZDR requests (the Vertex AI abuse-monitoring exception and written confirmation of Text-to-Speech retention).
 2. **Weeks 2–3, single-device MVP (guide → family).** The hub records Mandarin or takes typed Mandarin, shows Cantonese text and plays Cantonese audio on earphones, with provider adapters in place.
 3. **Weeks 4–5, rooms and listener PWA.** QR join, WebSocket fan-out, bubbles, player states, on-phone cache, reconnect and backfill; English text if time permits. Lock the primary translation model by 15 Nov.
 4. **Weeks 6–7, field tests in Singapore.** Everything first switches to its trip configuration (Groq Developer plan, OpenAI credit topped up, budget alert raised). The family uses their own phones in noisy places such as hawker centres and the MRT, with someone acting as the Mandarin guide and wearing the spare hub phone. Compare its transcripts against a clip-on to decide whether to buy a mic. Phase 2 (family → guide) starts only once guide → family passes.
@@ -473,7 +487,7 @@ gantt
 
 ## Open decisions
 
-Ten decisions remain; most close after the week-1 bake-off. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
+Twelve decisions remain; most close after the week-1 bake-off. Decided on 23 Oct: Chirp 3 streaming as the target design, one OpenAI fallback for speech-to-text, a sentence-level Cantonese-character junk filter, and per-model temperature. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
 
 - [ ] Get the spare hub phone and its eSIM or physical SIM; confirm the line routes outside China
 - [ ] Whether the guide will be driving or seated separately (affects phone placement in the car)
@@ -481,6 +495,8 @@ Ten decisions remain; most close after the week-1 bake-off. Decided on 13 Oct: t
 - [ ] Google's written confirmation that Text-to-Speech doesn't retain text (request in week 1)
 - [ ] Primary translation model, Gemini on Vertex AI or Groq, by 15 Nov using the decision rule
 - [ ] Confirm the STT and TTS primaries (Chirp 3, Chirp 3 HD) or promote a fallback, after the bake-off
+- [ ] Confirm Chirp 3 streaming on real guide recordings, then rewrite hard rule 9 (chunks → streamed segments)
+- [ ] STT fallback model (`gpt-4o-transcribe` or `gpt-transcribe`) and the junk filter's Cantonese-character share, after the bake-off
 - [ ] Google Cloud Translation's role (none, last-resort fallback, or main translator), after the bake-off
 - [ ] New-bubble cue while paused: chime or animation (every family phone is an iPhone, and iOS Safari can't vibrate)
 - [ ] Clip-on mic for the guide: only if the weeks 6–7 field test shows phone-only is not enough
