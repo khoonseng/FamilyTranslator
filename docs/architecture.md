@@ -162,7 +162,7 @@ Google Cloud is the primary provider for every stage, each stage has a fallback 
 
 | Stage | Primary | Fallback | Notes |
 | --- | --- | --- | --- |
-| STT, Mandarin, Cantonese and English | Google Speech-to-Text V2, `chirp_3` model, **streaming** (target, confirmed by the week-1 test; sync meanwhile): cmn-Hans-CN (GA), yue-Hant-HK (Preview), en-US. Runs only in the `us` and `eu` multi-regions. The glossary is also passed as phrase biasing | One OpenAI model run on the saved audio segments: `gpt-4o-transcribe` (US$0.006/min) or `gpt-transcribe` (US$0.0045/min), chosen by the bake-off | Bake-off scores all candidates on Chongqing-accented, fast narration, and checks that the fallback doesn't return Mandarin-style text for Cantonese speech. Chirp 3 costs US$0.016/min after 60 free minutes a month, so the trip's ~900 minutes cost about US$13 or come out of Google's free-trial credit |
+| STT, Mandarin, Cantonese and English | Google Speech-to-Text V2, `chirp_3` model, **streaming** (decided 24 Oct): cmn-Hans-CN (GA), yue-Hant-HK (Preview), en-US. Runs only in the `us` and `eu` multi-regions. The glossary is also passed as phrase biasing | OpenAI `gpt-transcribe` (US$0.0045/min) on the saved audio segments: the **safety net** for gaps Chirp 3 leaves, and the **fallback** when the stream fails | On 16 real guide clips, `gpt-transcribe` scored 12.7% error and Chirp 3 streaming 13.4% (excluding one clip it cut short); `gpt-4o-transcribe` scored 32.3% and is not used. The family recordings will check that `gpt-transcribe` doesn't return Mandarin-style text for Cantonese speech. Chirp 3 costs US$0.016/min after 60 free minutes a month, so the trip's ~900 minutes cost about US$13 or come out of Google's free-trial credit |
 | Translation LLM | Decided by 15 Nov using the rule below: Gemini 3.6 Flash on **Vertex AI**, or Groq | The other of the two. Groq candidates: `qwen/qwen3.8-27b` (Preview) and `openai/gpt-oss-120b` (Production) | All candidates pass the same blind test and colloquial-marker check, in both directions |
 | Translation, bake-off candidate | Google Cloud Translation v3, standard (NMT) model, text only: `zh-CN` → `yue`, `en`; `yue`, `en` → `zh-CN` | Role decided after the bake-off: none, last-resort fallback, or main translator | Same blind test and colloquial-marker check as the LLMs. See "Google Cloud Translation" below |
 | TTS, Cantonese and Mandarin | Google Chirp 3 HD voices (Cantonese yue-HK in Preview), one non-streaming request per sentence returning MP3 | Google's older non-Chirp voices | In-laws' blind listening test picks the voices. MP3 because it plays on every iPhone; Ogg Opus support in iOS Safari is unconfirmed, and per-sentence clips gain little from streaming |
@@ -204,13 +204,15 @@ Gemini at 0.2 was also faster. Google's advice to keep 1.0 is mainly about reaso
 
 **Ruled out.** OpenAI GPT-Realtime-Translate (no Cantonese output voice), conversational realtime models (an assistant, not an interpreter), Groq TTS (no Chinese voices, and Groq does not host Qwen3-TTS), the Gemini API free tier in AI Studio (prompts may be used to improve Google's models, so it fails ZDR), Qwen3-TTS on Alibaba Model Studio (ZDR only for enterprise customers, and flagged content can be kept for up to 2 years) and Azure Speech (kept to one cloud provider). OpenAI's API has no free tier, so it serves only as a paid STT fallback. OpenAI `gpt-live-transcribe` (US$0.017/min) streams, but only through the Realtime API, which keeps data for 30 days for abuse monitoring unless OpenAI approves zero data retention. A streaming fallback would also add little: it only covers a Chirp 3 outage, and the file-based fallback answered a 5-second clip in about 1–2 s. It would be reconsidered only as a Chirp 3 replacement, and only if OpenAI confirms zero retention in writing.
 
-**Streaming speech-to-text (target design, decided 23 Oct; confirmed by the week-1 test)**
+**Streaming speech-to-text with a safety net (decided 24 Oct; hard rule 9)**
 
 Non-streaming Chirp 3 took about 3 s to transcribe a 5-second clip, on top of about 0.7 s of pause detection and the upload: too slow for the 2–4 s target. Streaming transcribes while the guide talks. Our design never lost speech at pauses, because Guide mode stays latched; streaming is about speed and whole sentences.
 
 - **Hub:** sends speech audio over its WebSocket while Guide is latched. The browser VAD still holds back long silences, which saves money because Chirp 3 bills per second of audio. Its pauses also cut the saved audio into segments for the fallback.
 - **Server:** keeps one Chirp 3 stream open. Google's limits: a stream lasts at most 5 minutes (the server starts a new one at a pause before then), each message carries at most 25 KB, and audio must arrive at real-time pace. Chirp 3's final transcripts are split into sentences at punctuation, filtered (junk filter) and translated one by one.
-- **Fallback:** if the stream fails, the saved segments go to the OpenAI fallback model as files.
+- **Safety net:** when a segment ends, the server checks that Chirp 3's final transcripts reach to within 1 s of its end. If they don't, only the uncovered audio goes to `gpt-transcribe`, which answered a whole segment in about 1 s in the bake-off.
+- **Fallback:** if the stream fails, whole segments go to `gpt-transcribe` until it recovers.
+- **Why streaming stays the main path** although `gpt-transcribe` was as fast on short clips: with long non-stop narration, non-streaming STT has to wait for a pause or the 15 s cap before it can start, while streaming delivers each sentence about a second after it ends. Chirp 3 also runs on Google's free credits.
 - **First synthetic test (23 Oct, laptop in Singapore):** each sentence's final transcript arrived 0.8–1.0 s after its audio, about 1.7–2.0 s after the speaker stopped, because Chirp 3 first waits for a short silence. "Standard" endpointing kept sentences whole; "short" split mid-word ("排队可能要40分" / "钟左右"), so standard is the default.
 - **Real recordings (23 Oct, 16 chunks from 10 WeChat voice messages by local guides, 2 min):**
 
@@ -223,8 +225,20 @@ Non-streaming Chirp 3 took about 3 s to transcribe a 5-second clip, on top of ab
   | OpenAI `gpt-4o-transcribe`, non-streaming | 1.3 s, plus ~0.7 s of pause detection | 1.9 s | skipped parts of 2 chunks |
 
   In the dropped chunk, Chirp 3 sent a final transcript mid-sentence at 8.6 s and never transcribed the remaining 4.6 s, even with extra trailing silence. Levelling the volume didn't stop it and made transcripts worse.
-  - **Design consequence:** a streaming design needs a safety net. When a pause-cut segment ends, check that the streamed transcripts cover it, and send any uncovered audio to non-streaming STT. On these numbers, non-streaming `gpt-transcribe` matches streaming's total delay without the drop.
-- **Still to confirm:** accuracy, once the owner has corrected the reference transcripts; and how Chirp 3 splits long, continuous narration. Hard rule 9 is rewritten once these hold.
+  - **Accuracy** against the owner's corrected transcripts (numbers written as digits or words count as equal):
+
+    | Run | Error rate |
+    | --- | --- |
+    | `gpt-transcribe` | 12.7% |
+    | Chirp 3, non-streaming, glossary | 12.7% |
+    | Chirp 3 streaming | 18.4%, or 13.4% without the clip it cut short |
+    | Chirp 3, non-streaming, Mandarin + Cantonese | 15.6% |
+    | `gpt-4o-transcribe` | 32.3% |
+
+  - **Junk filter:** dropped 0 of 17 real guide sentences at every threshold tested.
+- **Still to test:**
+  - how Chirp 3 splits long, continuous narration (`02b_stt_streaming.py --continuous` on longer recordings);
+  - whether the junk filter catches real family chatter (a 1–2 minute recording).
 
 ## Data retention (ZDR) and the primary translation model
 
@@ -374,8 +388,8 @@ The target is about 2–4 seconds from end of sentence to translated audio, at a
 | Step | Expected time |
 | --- | --- |
 | VAD waits for the pause that ends a chunk (non-streaming only) | 0.6–0.8 s |
-| STT on one sentence, non-streaming (measured 23 Oct from a Singapore laptop: ~3 s for a 5 s clip) | ~3 s |
-| STT, streaming: end of speech to final transcript (first synthetic test, 23 Oct) | ~1.7–2.0 s |
+| STT, Chirp 3 streaming: end of speech to final transcript (16 real clips, 23 Oct) | ~2.0 s (p90 2.3 s) |
+| STT, safety net only: `gpt-transcribe` on the uncovered audio | ~1.0 s |
 | Translation LLM, first sentence streamed | 0.5–1 s |
 | TTS, first audio bytes | 0.5–1 s |
 | Roaming path and the Singapore–`us-central1` crossing | 0.3–0.6 s |
@@ -472,7 +486,8 @@ The biggest risks are audio capture and Cantonese quality, not hosting.
 | Hub mic re-captures its own speaker output | Translation loop, as seen in Traverba | Half-duplex hub (no capture during playback), with browser echo cancellation as a second layer |
 | Family chatter while Guide mode is latched | Junk bubbles transcribed as Mandarin | Three-layer junk filter: mic close to the guide, drop sentences written in Cantonese, drop fragments; listeners on earphones |
 | Junk filter drops real guide sentences (e.g. accented speech written with Cantonese characters) | Real narration silently dropped | Bake-off sets the Cantonese-character share from real guide and chatter recordings; if no share separates them, raise it or disable layer 2 |
-| Non-streaming STT too slow (~3 s per clip) | Audio arrives well after the 2–4 s target | Chirp 3 streaming (target design); week-1 test confirms |
+| Non-streaming STT too slow (~3 s per clip) | Audio arrives well after the 2–4 s target | Chirp 3 streaming (decided 24 Oct) |
+| Chirp 3 streaming stops transcribing mid-segment | Part of the guide's speech never reaches the listeners | Safety net: uncovered audio of each segment goes to `gpt-transcribe` (seen in 1 of 16 real clips) |
 | Fast, non-stop narration | Listeners drift further behind | Raise `speaking_rate` to about 1.1–1.25 when clips queue up |
 | Hub phone battery drains | Translation stops mid-tour | Car charger and power bank |
 | Bluetooth earbuds connected to the hub | Phone silently switches to the earbud mic | Keep the hub phone free of Bluetooth audio devices |
@@ -519,7 +534,7 @@ gantt
 
 ## Open decisions
 
-Twelve decisions remain; most close after the week-1 bake-off. Decided on 23 Oct: Chirp 3 streaming as the target design, one OpenAI fallback for speech-to-text, a sentence-level Cantonese-character junk filter, and per-model temperature. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
+Eleven decisions remain; most close after the week-1 bake-off. Decided on 24 Oct: Chirp 3 streaming as the speech-to-text, with `gpt-transcribe` as safety net and fallback. Decided on 23 Oct: Chirp 3 streaming as the target design, one OpenAI fallback for speech-to-text, a sentence-level Cantonese-character junk filter, and per-model temperature. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
 
 - [ ] Get the spare hub phone and its eSIM or physical SIM; confirm the line routes outside China
 - [ ] Whether the guide will be driving or seated separately (affects phone placement in the car)
@@ -527,8 +542,7 @@ Twelve decisions remain; most close after the week-1 bake-off. Decided on 23 Oct
 - [ ] Google's written confirmation that Text-to-Speech doesn't retain text (request in week 1)
 - [ ] Primary translation model, Gemini on Vertex AI or Groq, by 15 Nov using the decision rule
 - [ ] Confirm the STT and TTS primaries (Chirp 3, Chirp 3 HD) or promote a fallback, after the bake-off
-- [ ] Confirm Chirp 3 streaming on real guide recordings, then rewrite hard rule 9 (chunks → streamed segments)
-- [ ] STT fallback model (`gpt-4o-transcribe` or `gpt-transcribe`) and the junk filter's Cantonese-character share, after the bake-off
+- [ ] The junk filter's Cantonese-character share, after a family chatter recording
 - [ ] Google Cloud Translation's role (none, last-resort fallback, or main translator), after the bake-off
 - [ ] New-bubble cue while paused: chime or animation (every family phone is an iPhone, and iOS Safari can't vibrate)
 - [ ] Clip-on mic for the guide: only if the weeks 6–7 field test shows phone-only is not enough

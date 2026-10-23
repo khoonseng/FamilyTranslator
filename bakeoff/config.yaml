@@ -21,8 +21,9 @@ stt:
       # 4.6 s of chunk 6-0008 (8 of 8 runs) and misheard more (火锅 -> 佛宗).
       target_rms_dbfs: null
   openai:
-    # Fallback candidates (decided 2026-10-23): one is kept, run on the saved audio.
-    models: [gpt-4o-transcribe, gpt-transcribe]
+    # Safety net and fallback (decided 2026-10-24): gpt-transcribe. gpt-4o-transcribe scored
+    # 32.3% error on the guides' clips (it skipped content) and is no longer run.
+    models: [gpt-transcribe]
 
 tts:
   google:

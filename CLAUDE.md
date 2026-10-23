@@ -36,8 +36,8 @@ Only two audio channels exist: Cantonese (listeners) and Mandarin (hub speaker).
 1. Hub = a spare phone the guide carries on a lanyard, with its own eSIM or SIM; the owner's
    phone is the fallback hub. **Guide** latches into continuous listening; client-side VAD splits
    speech at pauses. **Family** (phase 2) is tapped for replies, then back to Guide.
-2. Cloud Run receives audio → STT in the language set by the mode. Target design (pending the
-   week-1 test): the hub streams audio and the server keeps one Chirp 3 streaming session.
+2. The hub streams audio; Cloud Run keeps one Chirp 3 streaming session in the language set by
+   the mode, with `gpt-transcribe` filling any gaps (hard rule 9).
 3. ONE translation LLM call per sentence returns JSON with the target languages only (`yue`, `en`
    for guide speech; `zh_hans` added for family speech). The source language is the transcript
    itself, never regenerated. The field TTS needs comes first.
@@ -112,20 +112,27 @@ Build order:
    - Tint the whole hub screen per mode so the current mode is unmistakable.
    - Capture from the phone's default audio input (`getUserMedia`), so a wired/USB-C clip-on mic
      works if one is added later. Do not build Bluetooth mic support.
-9. Silence is never sent: Silero VAD runs in the browser (`@ricky0123/vad-web`); chunks end at
-   short pauses (about 0.6–0.8 s, tuned in testing), not fixed windows, and are capped at 15
-   seconds so non-stop speech is still sent. The server splits long transcripts at punctuation
-   and translates each sentence as it is ready. Three units, never mixed up:
-   - **Chunk** (sent by the hub): ends at a short pause or the 15 s cap. Never shown to users.
-   - **Sentence** (one audio clip): split from the transcript at punctuation.
-   - **Bubble** (one voice note): a new bubble starts after a pause longer than 2 s, or when the
-     current one reaches 45 s of audio or 6 sentences. Chunks never wait for the 2 s pause.
-   - **Target, pending the week-1 streaming test (decided 2026-10-23):** Chirp 3 streaming. The
-     hub streams speech audio while Guide is latched (VAD still holds back long silences); the
-     server keeps one Chirp 3 stream, renewed at a pause before Google's 5-minute limit, and
-     splits Chirp 3's final transcripts into sentences. The hub's VAD pauses still cut the saved
-     audio into segments, which the OpenAI fallback transcribes if the stream fails. This rule
-     is rewritten once `bakeoff/02b_stt_streaming.py` confirms the latency and accuracy.
+9. Streaming STT with a safety net (decided 2026-10-24). Silence is never sent: Silero VAD runs
+   in the browser (`@ricky0123/vad-web`).
+   - **Hub:** while Guide is latched, streams speech audio to the server as it is spoken. The VAD
+     holds back long silences but lets about 1 s through after speech ends, so Chirp 3 can
+     notice the pause and finish the sentence.
+   - **Server:** keeps one Chirp 3 streaming session (Guide mode: `cmn-Hans-CN` + `yue-Hant-HK`,
+     glossary hints, "standard" endpointing), renewed at a pause before Google's 5-minute
+     limit. It splits Chirp 3's final transcripts into sentences at punctuation, filters them
+     (rule 8) and translates each one as soon as it is ready.
+   - **Safety net:** the hub's VAD also cuts the audio into segments at pauses (about 0.6–0.8 s,
+     capped at 15 s), which the server keeps. When a segment ends, if Chirp 3's final
+     transcripts don't reach to within 1 s of its end, the uncovered audio is sent to
+     `gpt-transcribe` (Chirp 3 cut 4.6 s off one of 16 real clips in the bake-off). If the
+     stream fails, whole segments go to `gpt-transcribe` until it recovers.
+   - Units, never mixed up:
+     - **Segment** (cut by the hub's VAD): pause to pause, at most 15 s. Kept for the safety
+       net; never shown to users.
+     - **Sentence** (one audio clip): split from the transcript at punctuation.
+     - **Bubble** (one voice note): a new bubble starts after a pause longer than 2 s, or when
+       the current one reaches 45 s of audio or 6 sentences. Sentences never wait for the 2 s
+       pause.
 10. Replays never call TTS again: clips are cached on the phone (IndexedDB) and in Cloud Storage.
 11. Listener playback rules (see architecture doc, "Listener experience"):
     - Live (default): new clips auto-play in order and are marked `played`.
@@ -176,7 +183,7 @@ AI providers (all must meet hard rule 14; the week-1 bake-off confirms or promot
 
 | Stage | Primary | Fallback (in order) |
 | --- | --- | --- |
-| STT | Google Speech-to-Text V2 `chirp_3`, streaming (target; sync until week 1 confirms): `cmn-Hans-CN` + `yue-Hant-HK` in Guide mode, `yue-Hant-HK` + `en-US` in Family mode; glossary as phrase biasing | One OpenAI model on the saved audio segments, `gpt-4o-transcribe` or `gpt-transcribe`, chosen by the bake-off |
+| STT | Google Speech-to-Text V2 `chirp_3`, **streaming**: `cmn-Hans-CN` + `yue-Hant-HK` in Guide mode, `yue-Hant-HK` + `en-US` in Family mode; glossary as phrase biasing | OpenAI `gpt-transcribe` on the saved audio segments, as both the safety net (gaps Chirp 3 left) and the fallback (stream down) |
 | Translation LLM | Chosen by 15 Nov (rule below): Gemini 3.6 Flash on Vertex AI, or Groq | The other one. Groq candidates: `qwen/qwen3.8-27b` (Preview), `openai/gpt-oss-120b` (Production) |
 | Translation, bake-off candidate | Google Cloud Translation v3 (NMT, text only; `yue` supported) | Role decided after the bake-off: none, last-resort fallback, or main. Adopting it means rewording hard rules 4 and 6 (owner approval) |
 | TTS | Google Chirp 3 HD voices, Cantonese and Mandarin | Google's older non-Chirp voices |
@@ -370,3 +377,10 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
 - 2026-10-23 — Vertex AI refused ~40% of requests (429, shared pool) during run 2, with none
   in run 1; Groq refused 1 of 61, Cloud Translation none. Gemini failover must be immediate;
   this weighs on the 15 Nov choice of main translator.
+- 2026-10-24 — STT is Chirp 3 streaming, with OpenAI `gpt-transcribe` as both safety net and
+  fallback (owner decision; hard rule 9 rewritten). Bake-off on 16 real WeChat clips from local
+  guides: Chirp 3 streaming 13.4% error (excluding one clip where it cut off the last 4.6 s),
+  ~2.0 s after speech ends; `gpt-transcribe` 12.7%, ~1.0 s per segment, never dropped speech;
+  `gpt-4o-transcribe` 32.3% (dropped content), so it is not used. Streaming stays the main
+  path because, for long non-stop narration, it delivers each sentence without waiting for a
+  pause. Junk filter dropped 0 of 17 real guide sentences; family chatter still to test.
