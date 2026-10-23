@@ -16,7 +16,8 @@ phones play Cantonese audio with large-font text. All phones use Singapore roami
 - Phase: **Week 1 — Cantonese bake-off** (update this line as phases complete)
 - Trip: **19–23 Dec 2026** (5 days). Trip configuration incl. the always-on instance goes live 15 Dec.
 - Tech stack: **Python/FastAPI backend, Vue 3 frontend** — see "Stack" below
-- Primary translation model: **not yet chosen** — decided by 15 Nov 2026 (see "Stack")
+- Primary translation model: **Gemini won the bake-off**; it is primary if Google grants the
+  Vertex AI abuse-monitoring exception by 15 Nov 2026, otherwise Qwen on Groq (see "Stack")
 - ZDR: waiting on Google for (a) the Vertex AI abuse-monitoring exception and (b) written
   confirmation that Text-to-Speech doesn't retain text
 
@@ -69,14 +70,18 @@ Build order:
    fine). `min-instances=1` only from 15 Dec to 23 Dec 2026; set it back to 0 on 24 Dec.
 3. Nothing is hosted in mainland China. The app is reached over SG roaming; do not add
    China-specific CDNs, ICP-dependent services or VPN logic.
-4. Cascade only: STT → one LLM call → TTS. Do not use OpenAI GPT-Realtime-Translate or
-   conversational realtime models (no Cantonese output).
+4. Cascade only: STT → translation → TTS. Translation is one LLM call per sentence (Gemini, then
+   Qwen on Groq). Only if both LLM providers fail on a sentence does Google Cloud Translation
+   translate it (two calls, `yue` and `en`, no context, literal wording). Do not use OpenAI
+   GPT-Realtime-Translate or conversational realtime models (no Cantonese output).
 5. `yue` is written as colloquial spoken Cantonese (粵語口語, e.g. 佢哋喺度等緊我哋) in Traditional
    characters, never formal written Chinese. The same string is displayed and sent to TTS.
 6. Every provider (STT, LLM, TTS) sits behind an adapter interface with per-sentence failover to
    a standby provider. Business logic never imports a provider SDK directly.
    - The LLM adapter is ONE OpenAI-compatible chat client, configured per provider with
      `base_url`, `model` and key. Gemini, Groq and OpenAI are config entries, not new code.
+   - Google Cloud Translation has its own small adapter, used only as the last-resort
+     translation fallback (rule 4); it authenticates with the service account.
    - STT and TTS adapters are provider-specific (Google and OpenAI APIs differ).
    - Google speech APIs and Gemini on Vertex AI authenticate with the Cloud Run service account
      (no keys). Only the Groq and OpenAI keys live in Secret Manager.
@@ -184,15 +189,14 @@ AI providers (all must meet hard rule 14; the week-1 bake-off confirms or promot
 | Stage | Primary | Fallback (in order) |
 | --- | --- | --- |
 | STT | Google Speech-to-Text V2 `chirp_3`, **streaming**: `cmn-Hans-CN` + `yue-Hant-HK` in Guide mode, `yue-Hant-HK` + `en-US` in Family mode; glossary as phrase biasing | OpenAI `gpt-transcribe` on the saved audio segments, as both the safety net (gaps Chirp 3 left) and the fallback (stream down) |
-| Translation LLM | Chosen by 15 Nov (rule below): Gemini 3.6 Flash on Vertex AI, or Groq | The other one. Groq candidates: `qwen/qwen3.8-27b` (Preview), `openai/gpt-oss-120b` (Production) |
-| Translation, bake-off candidate | Google Cloud Translation v3 (NMT, text only; `yue` supported) | Role decided after the bake-off: none, last-resort fallback, or main. Adopting it means rewording hard rules 4 and 6 (owner approval) |
-| TTS | Google Chirp 3 HD voices, Cantonese and Mandarin | Google's older non-Chirp voices |
+| Translation | Gemini 3.6 Flash on Vertex AI (bake-off winner), reasoning minimal, temperature 0.2 | Groq `qwen/qwen3.8-27b` (Preview: re-check the ID before the trip), then Google Cloud Translation v3 as last resort |
+| TTS | Google Chirp 3 HD, Cantonese voice `yue-HK-Chirp3-HD-Despina` (in-laws' pick) | Older Google voice `yue-HK-Standard-A` |
 
-Primary translation model rule (both providers stay configured, each the other's fallback):
-- Gemini on Vertex AI is primary if Google grants the abuse-monitoring exception AND Gemini wins
-  the bake-off.
-- Otherwise Groq is primary with the bake-off winner; if Qwen and gpt-oss are close, use
-  `openai/gpt-oss-120b` (Production, not Preview).
+Primary translation model rule (both LLM providers stay configured, each the other's fallback):
+- Gemini won the bake-off (2026-10-24), so Gemini on Vertex AI is primary if Google grants the
+  abuse-monitoring exception; otherwise Qwen on Groq is primary.
+- Groq's model is Qwen3.8-27B, which clearly beat gpt-oss-120b. If Groq withdraws the Qwen
+  preview, `openai/gpt-oss-120b` takes its place.
 - Deadline 15 Nov 2026 (end of week 5). Whatever stands then is the trip configuration.
 
 Not used: Azure (one cloud only), self-hosted or on-device models (no wav2vec, no Hugging
@@ -384,3 +388,18 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   `gpt-4o-transcribe` 32.3% (dropped content), so it is not used. Streaming stays the main
   path because, for long non-stop narration, it delivers each sentence without waiting for a
   pause. Junk filter dropped 0 of 17 real guide sentences; family chatter still to test.
+- 2026-10-24 — In-laws' blind test: Gemini picked as best for 7 of 10 sentences (naturalness
+  2.5/3), Qwen 2, gpt-oss 1, Cloud Translation 0. On 21 real guide sentences Gemini also handled
+  the guides' false starts best. Owner decisions: Gemini is the bake-off winner and main
+  translator (subject to Google's abuse-monitoring exception); Qwen3.8-27B is the Groq model
+  (gpt-oss-120b only if Groq withdraws the Qwen preview); Cloud Translation is the last-resort
+  fallback when both LLM providers fail (hard rules 4 and 6 reworded).
+- 2026-10-24 — Voice: `yue-HK-Chirp3-HD-Despina`, with the older `yue-HK-Standard-A` as the
+  fallback voice (round A: Despina 2 votes, Standard-A 2, Zephyr 1, Iapetus 0).
+- 2026-10-24 — Clips play at normal speed (1.0×) by default (owner decision): Despina's
+  Cantonese took 90% of the guides' speaking time on 21 real sentences. The catch-up mechanism
+  for long fast stretches (auto 1.1× while ≥3 clips wait, or a "Jump to latest" button) is
+  still open.
+- 2026-10-24 — Translation prompt rules for live speech (false starts, word swaps such as
+  第二天 → 第二日 without changing the day or time, no repeats) adopted after runs 4–5: Gemini's
+  Mandarin-word slips fell from 15 to 0 on 21 real sentences.

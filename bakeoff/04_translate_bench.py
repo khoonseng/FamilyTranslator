@@ -30,7 +30,6 @@ from lib.scoring import parse_json_object
 from lib.text import split_sentences
 
 REVIEWED = {"y", "yes", "x", "1", "true"}
-MIN_INTERVAL_S = {"groq": 2.2}  # stay under 30 requests/minute on the Free plan
 MT_CODES = {"guide": "zh-CN", "yue": "yue", "en": "en"}
 
 
@@ -124,6 +123,14 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=3, help="runs per guide sentence")
     parser.add_argument("--guide-sentences", type=int, default=5)
     parser.add_argument(
+        "--groq-interval",
+        type=float,
+        default=2.2,
+        # Groq Free: 30 requests/min, but also 7,000 input tokens/min; with the full prompt
+        # (~1,000 tokens) that is ~7 calls a minute, so use 9 on the Free plan.
+        help="seconds between Groq calls (Free plan: 9)",
+    )
+    parser.add_argument(
         "--skip-drafted", action="store_true", help="leave out sentences.yaml (real ones only)"
     )
     parser.add_argument("--directions", default="guide_to_family,family_to_guide")
@@ -170,9 +177,8 @@ def main() -> None:
                     if (sentence["id"], name, repeat) in done:
                         continue
                     provider = provider_of.get(name, "google")
-                    wait = MIN_INTERVAL_S.get(provider, 0) - (
-                        time.monotonic() - last_call.get(provider, 0)
-                    )
+                    interval = args.groq_interval if provider == "groq" else 0
+                    wait = interval - (time.monotonic() - last_call.get(provider, 0))
                     if wait > 0:
                         time.sleep(wait)
                     last_call[provider] = time.monotonic()
