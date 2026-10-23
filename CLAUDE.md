@@ -145,6 +145,10 @@ Build order:
       into later bubbles. Replays never change the `played` flag.
     - Paused: new clips arrive silently, marked unplayed, until the user taps "Play N new" or
       turns auto-play back on. Tapping another bubble mid-replay stops the current one; clips never overlap.
+    - Clips play at normal speed (1.0×), never sped up. When 3 or more clips are waiting in Live
+      (a fast guide talking non-stop), a large **跳到最新 / Jump to latest** button appears. Tapping
+      it stops the current clip and plays the newest one; the skipped clips stay unplayed and
+      marked, so they can be replayed later.
 12. Mobile web constraints: HTTPS only; tap-to-start screen on join (unlocks iOS audio); Screen
     Wake Lock while in a room; reconnect + backfill from the last utterance id.
 13. Half-duplex capture: any phone with an open mic (always the hub) pauses capture while it
@@ -397,9 +401,9 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
 - 2026-10-24 — Voice: `yue-HK-Chirp3-HD-Despina`, with the older `yue-HK-Standard-A` as the
   fallback voice (round A: Despina 2 votes, Standard-A 2, Zephyr 1, Iapetus 0).
 - 2026-10-24 — Clips play at normal speed (1.0×) by default (owner decision): Despina's
-  Cantonese took 90% of the guides' speaking time on 21 real sentences. The catch-up mechanism
-  for long fast stretches (auto 1.1× while ≥3 clips wait, or a "Jump to latest" button) is
-  still open.
+  Cantonese took 90% of the guides' speaking time on 21 real sentences. For long fast stretches,
+  a "Jump to latest" button (owner's choice over an automatic 1.1×: simpler, and the voice
+  never changes); see hard rule 11.
 - 2026-10-24 — Translation prompt rules for live speech (false starts, word swaps such as
   第二天 → 第二日 without changing the day or time, no repeats) adopted after runs 4–5: Gemini's
   Mandarin-word slips fell from 15 to 0 on 21 real sentences.

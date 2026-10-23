@@ -308,7 +308,11 @@ The hub sends the pause length before each chunk, and the server decides where b
 
 Clips play at **normal speed (1.0×)** by default (decided 24 Oct). On the 21 real guide sentences, Despina's Cantonese took **90%** as long as the guides' own Mandarin: 106 s against 119 s. Gemini drops the false starts and filler, so listeners don't fall behind on average. Single sentences ran up to 1.6× longer.
 
-The only risk is a fast guide talking for minutes without pausing, where clips could queue up. The catch-up mechanism for that case is still open: an automatic 1.1× only while 3 or more clips wait, or a "Jump to latest" button. In the blind test, 1.2× was easy to follow for 2 of 3 clips and "a little hard" for 1.
+The only risk is a fast guide talking for minutes without pausing, where clips could queue up. For that case there is a **"Jump to latest" button** (decided 24 Oct), chosen over an automatic 1.1× because it is simpler and the voice never changes speed:
+- When 3 or more clips are waiting in Live, a large **跳到最新 / Jump to latest** button appears.
+- Tapping it stops the current clip and plays the newest one.
+- The skipped clips stay unplayed and marked, like unheard voice notes, so they can be replayed.
+- The threshold of 3 is tuned in the field tests.
 
 **Bubbles**
 
@@ -341,6 +345,7 @@ stateDiagram-v2
 ```
 
 - Tapping another bubble mid-replay stops the current one at once; two clips never overlap.
+- In Live, when 3 or more clips are waiting, **跳到最新 / Jump to latest** skips to the newest clip; skipped clips stay unplayed (see "Keeping up with fast speech").
 - Replays never re-call TTS: clips are cached on the phone (IndexedDB) and backed by Cloud Storage, so a replay works even in a tunnel.
 - Each phone shows a tap-to-start screen on joining, which unlocks audio on iOS, and holds a screen Wake Lock while in a room.
 
@@ -496,7 +501,7 @@ The biggest risks are audio capture and Cantonese quality, not hosting.
 | Junk filter drops real guide sentences (e.g. accented speech written with Cantonese characters) | Real narration silently dropped | Bake-off sets the Cantonese-character share from real guide and chatter recordings; if no share separates them, raise it or disable layer 2 |
 | Non-streaming STT too slow (~3 s per clip) | Audio arrives well after the 2–4 s target | Chirp 3 streaming (decided 24 Oct) |
 | Chirp 3 streaming stops transcribing mid-segment | Part of the guide's speech never reaches the listeners | Safety net: uncovered audio of each segment goes to `gpt-transcribe` (seen in 1 of 16 real clips) |
-| Fast, non-stop narration | Listeners drift further behind | Normal speed is usually enough (Cantonese ran at 90% of the guide's time); catch-up mechanism for long fast stretches still to choose |
+| Fast, non-stop narration | Listeners drift further behind | Normal speed is usually enough (Cantonese ran at 90% of the guide's time); a "Jump to latest" button appears when 3+ clips wait |
 | Hub phone battery drains | Translation stops mid-tour | Car charger and power bank |
 | Bluetooth earbuds connected to the hub | Phone silently switches to the earbud mic | Keep the hub phone free of Bluetooth audio devices |
 | Chongqing-accented or fast Mandarin (the guide is likely to have both) | STT errors | Bake-off on 15–20 real Chongqing guide clips comparing Chirp 3 (sync and streaming), `gpt-4o-transcribe` and `gpt-transcribe`; glossary as phrase biasing; ask the guide for standard Putonghua |
@@ -542,7 +547,7 @@ gantt
 
 ## Open decisions
 
-Ten decisions remain. Decided on 24 Oct: normal-speed playback (1.0×); Chirp 3 streaming as the speech-to-text, with `gpt-transcribe` as safety net and fallback; Gemini as the bake-off winner, Qwen as the Groq model and Cloud Translation as the last-resort fallback; Despina as the Cantonese voice with Standard-A as fallback. Decided on 23 Oct: Chirp 3 streaming as the target design, one OpenAI fallback for speech-to-text, a sentence-level Cantonese-character junk filter, and per-model temperature. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
+Nine decisions remain. Decided on 24 Oct: normal-speed playback (1.0×) with a "Jump to latest" button; Chirp 3 streaming as the speech-to-text, with `gpt-transcribe` as safety net and fallback; Gemini as the bake-off winner, Qwen as the Groq model and Cloud Translation as the last-resort fallback; Despina as the Cantonese voice with Standard-A as fallback. Decided on 23 Oct: Chirp 3 streaming as the target design, one OpenAI fallback for speech-to-text, a sentence-level Cantonese-character junk filter, and per-model temperature. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
 
 - [ ] Get the spare hub phone and its eSIM or physical SIM; confirm the line routes outside China
 - [ ] Whether the guide will be driving or seated separately (affects phone placement in the car)
@@ -553,4 +558,3 @@ Ten decisions remain. Decided on 24 Oct: normal-speed playback (1.0×); Chirp 3 
 - [ ] New-bubble cue while paused: chime or animation (every family phone is an iPhone, and iOS Safari can't vibrate)
 - [ ] Clip-on mic for the guide: only if the weeks 6–7 field test shows phone-only is not enough
 - [ ] Whether English text shows by default for the wife's siblings
-- [ ] Catch-up for long fast narration: automatic 1.1× while 3+ clips wait, or a "Jump to latest" button
