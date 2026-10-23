@@ -130,3 +130,24 @@ def test_glitches():
     assert scoring.glitches("大家早晨，我哋第一站先去解放碑。") == []
     # Ordinary doubling in Cantonese is not a loop.
     assert scoring.glitches("佢慢慢行，好好睇吓。") == []
+
+
+@pytest.mark.parametrize(
+    "n, words",
+    [
+        (0, "零"),
+        (5, "五"),
+        (10, "十"),
+        (15, "十五"),
+        (40, "四十"),
+        (105, "一百零五"),
+        (2026, "二千零二十六"),
+    ],
+)
+def test_chinese_number(n, words):
+    assert scoring.chinese_number(n) == words
+
+
+def test_cer_treats_digits_and_chinese_numerals_alike():
+    assert scoring.cer("建议5到6天只玩重庆", "建议五到六天只玩重庆") == 0.0
+    assert scoring.cer("大概40分钟", "大概四十分钟") == 0.0

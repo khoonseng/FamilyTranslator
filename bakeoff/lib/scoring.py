@@ -17,9 +17,31 @@ def strip_punct(text: str) -> str:
     )
 
 
+_DIGITS = "零一二三四五六七八九"
+
+
+def chinese_number(n: int) -> str:
+    """0-9999 as spoken Chinese numerals: 5 -> 五, 40 -> 四十, 15 -> 十五, 105 -> 一百零五."""
+    if n < 10:
+        return _DIGITS[n]
+    out, zero = "", False
+    for value, unit in ((1000, "千"), (100, "百"), (10, "十"), (1, "")):
+        d, n = divmod(n, value)
+        if d:
+            if zero:
+                out += "零"
+            out += ("" if (unit == "十" and d == 1 and not out) else _DIGITS[d]) + unit
+            zero = False
+        elif out:
+            zero = True
+    return out
+
+
 def normalize(text: str, script: str = "simplified") -> str:
-    """Punctuation-free, lower-cased text in one Chinese script, for a fair comparison."""
+    """Punctuation-free, lower-cased text in one Chinese script, with Arabic numbers written as
+    Chinese numerals (6点钟 = 六点钟), for a fair comparison."""
     text = strip_punct(text).lower()
+    text = re.sub(r"\d{1,4}", lambda m: chinese_number(int(m.group())), text)
     return _to_simplified.convert(text) if script == "simplified" else _to_traditional.convert(text)
 
 

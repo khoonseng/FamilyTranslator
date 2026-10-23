@@ -5,7 +5,8 @@ Runs per set:
   guide    Chirp 3 Mandarin, with and without glossary hints; Chirp 3 Mandarin + Cantonese
            (Guide mode's language setting, for the junk filter); each OpenAI fallback candidate
            (Mandarin hint + glossary prompt)
-  chatter  Chirp 3 Mandarin (what junk Guide mode would produce); Chirp 3 Mandarin + Cantonese
+  chatter  Chirp 3 Mandarin (what junk Guide mode would produce); Chirp 3 Mandarin + Cantonese;
+           each OpenAI candidate in Guide mode (junk-filter check)
   yue      Chirp 3 Cantonese; Chirp 3 Cantonese + English (Family mode); each OpenAI candidate
   en       Chirp 3 Cantonese + English (Family mode); each OpenAI candidate
 
@@ -49,7 +50,9 @@ def runs_for(set_name: str, openai_models: list[str]) -> dict[str, tuple]:
         "en": ["chirp3-yue+en"],
     }[set_name]
     runs = {name: ("google", None, *GOOGLE_RUNS[name]) for name in google}
-    if set_name == "guide":
+    if set_name in ("guide", "chatter"):
+        # Guide mode: Mandarin hint + glossary. On chatter this shows whether OpenAI keeps
+        # Cantonese words (so the junk filter can catch them) or rewrites them as Mandarin.
         for model in openai_models:
             runs[f"openai-{model}"] = ("openai", model, ["cmn-Hans-CN"], True)
     elif set_name in ("yue", "en"):

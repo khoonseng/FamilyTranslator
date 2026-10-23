@@ -18,8 +18,9 @@ from lib.scoring import cantonese_share, char_edits, colloquial_score
 from lib.text import split_sentences
 
 SCRIPT = {"guide": "simplified", "yue": "traditional", "en": "simplified"}
-# Guide mode's language setting (Mandarin + Cantonese), sync and streaming.
-FILTER_RUNS = ["chirp3-cmn+yue", "chirp3-stream"]
+# Guide mode's language setting (Mandarin + Cantonese), sync and streaming, plus the OpenAI
+# candidate that could replace Chirp 3 (it gets a Mandarin hint in Guide mode).
+FILTER_RUNS = ["chirp3-cmn+yue", "chirp3-stream", "openai-gpt-transcribe"]
 
 
 def latest_records() -> dict[tuple[str, str], dict]:
