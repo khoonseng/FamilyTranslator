@@ -25,7 +25,8 @@ The plan and its questions come from `CLAUDE.md` ("Build phases") and `docs/arch
 | `02b_stt_streaming.py` | Chirp 3 streaming at real-time pace: delay from end of speech to final transcript, accuracy (scored by `03`); `--continuous` shows how whole narrations get split | Chunks, guide recordings |
 | `04a_glossary.py` | Uploads `glossary.yaml` to Cloud Translation (via a Cloud Storage file) | Setup |
 | `04_translate_bench.py`, `05_translate_score.py` | LLM configurations and Cloud Translation; colloquial score, speed; picks blind-test finalists | `sentences.yaml`, reviewed references |
-| `06_tts_bench.py`, `07_build_blind_test.py`, `08_blind_score.py` | Voices, the in-laws' blind test page, unblinding | Finalists (not written yet) |
+| `06_tts_bench.py --shortlist` | All 34 Cantonese voices read the same two sentences on one page; tick 3 and paste the line into `config.yaml` | Setup |
+| `06_tts_bench.py`, `07_build_blind_test.py`, `08_blind_score.py` | Blind-test clips, one self-contained page for the in-laws (voice, translation, speed), then unblinding | Shortlist, translation finalists |
 | `probe/` | Tiny Cloud Run service: `/latency`, `/locktest` | Not written yet |
 
 Every bench appends to a log in `out/` and skips calls it has already made, so after an error

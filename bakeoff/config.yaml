@@ -22,13 +22,32 @@ stt:
 
 tts:
   google:
-    endpoint: texttospeech.googleapis.com   # verify; a `us-` regional endpoint may be preferred
+    endpoint: texttospeech.googleapis.com
     yue_language: yue-HK
     cmn_language: cmn-CN
     sample_rate_hz: 24000
-    # Filled in after 00_smoke.py lists the real voices.
-    yue_voices: []
+    # Step 5: your 3 shortlisted Chirp 3 HD voices, from out/voices/shortlist.html.
+    # yue_voices: []
+    yue_voices: [yue-HK-Chirp3-HD-Despina, yue-HK-Chirp3-HD-Iapetus, yue-HK-Chirp3-HD-Zephyr]
+    # An older (non-Chirp) voice, the fallback, played alongside as a reference.
+    reference_voice: yue-HK-Standard-A
     cmn_voices: []
+    # What every voice reads on the shortlist page: natural Cantonese from the bench.
+    shortlist_texts:
+      - 洪崖洞夜晚七點半之後會開燈，嗰陣時特別多人，大家一定要跟緊我，唔好走散呀。
+      - 重慶係山城，好多路都要行上斜行落斜，行路嗰陣慢少少，小心腳下嘅梯級呀。
+
+# Step 5: the in-laws' blind test (06 generates the clips, 07 builds the page, 08 scores).
+blind_test:
+  translations_log: translations_r2.jsonl   # the run whose finalists are compared
+  # Round A (voice): the same text in each voice, from one translator so only the voice varies.
+  voice_round: {sentences: [draft-00, draft-01, draft-02, draft-03, draft-04],
+                text_from: gemini-minimal-t0.2}
+  # Round B (translation): every drafted sentence from each finalist, in all four voices; the
+  # page plays the voice the in-laws picked in round A.
+  # Round C (speed): faster speech, as used when clips pile up.
+  speed_round: {sentences: [draft-05, draft-06, draft-07], speaking_rate: 1.2,
+                text_from: gemini-minimal-t0.2}
 
 mt:
   google:
