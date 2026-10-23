@@ -42,3 +42,17 @@ def test_wav_roundtrip(tmp_path):
     path = tmp_path / "x.wav"
     audio.write_wav(path, pcm)
     assert np.array_equal(audio.decode(path), pcm)
+
+
+def test_normalize_levels_quiet_speech_without_clipping():
+    quiet_speech = tone(2, amplitude=900)  # about -31 dBFS
+    out = audio.normalize(quiet_speech, target_dbfs=-20)
+    rms_db = 20 * np.log10(np.sqrt(np.mean(out.astype(float) ** 2)) / 32768)
+    assert abs(rms_db - (-20)) < 0.5
+    assert np.abs(out).max() <= 32767
+
+
+def test_normalize_caps_gain_and_leaves_silence():
+    assert not audio.normalize(np.zeros(1600, np.int16)).any()
+    hiss = quiet(1)  # ~ -70 dBFS: capped at +20 dB, so it stays quiet
+    assert np.abs(audio.normalize(hiss)).max() < 400

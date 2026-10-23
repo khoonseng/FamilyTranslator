@@ -212,7 +212,19 @@ Non-streaming Chirp 3 took about 3 s to transcribe a 5-second clip, on top of ab
 - **Server:** keeps one Chirp 3 stream open. Google's limits: a stream lasts at most 5 minutes (the server starts a new one at a pause before then), each message carries at most 25 KB, and audio must arrive at real-time pace. Chirp 3's final transcripts are split into sentences at punctuation, filtered (junk filter) and translated one by one.
 - **Fallback:** if the stream fails, the saved segments go to the OpenAI fallback model as files.
 - **First synthetic test (23 Oct, laptop in Singapore):** each sentence's final transcript arrived 0.8–1.0 s after its audio, about 1.7–2.0 s after the speaker stopped, because Chirp 3 first waits for a short silence. "Standard" endpointing kept sentences whole; "short" split mid-word ("排队可能要40分" / "钟左右"), so standard is the default.
-- **Still to confirm** with real guide recordings (`bakeoff/02b_stt_streaming.py`): accuracy against the sync runs, delay on real narration, and how Chirp 3 splits continuous speech. Hard rule 9 is rewritten once these hold.
+- **Real recordings (23 Oct, 16 chunks from 10 WeChat voice messages by local guides, 2 min):**
+
+  | Run | Median delay | p90 delay | Speech dropped |
+  | --- | --- | --- | --- |
+  | Chirp 3 streaming, standard | 2.0 s after the speaker stopped | 2.3 s | 1 of 16 chunks (4.6 s lost, in all 8 repeat runs) |
+  | Chirp 3 streaming, short | 1.8 s | 2.4 s | 2 of 16 chunks |
+  | Chirp 3 non-streaming | 3.2–3.4 s, plus ~0.7 s of pause detection | 5.3–5.7 s | none |
+  | OpenAI `gpt-transcribe`, non-streaming | 1.0 s, plus ~0.7 s of pause detection | 1.2 s | none |
+  | OpenAI `gpt-4o-transcribe`, non-streaming | 1.3 s, plus ~0.7 s of pause detection | 1.9 s | skipped parts of 2 chunks |
+
+  In the dropped chunk, Chirp 3 sent a final transcript mid-sentence at 8.6 s and never transcribed the remaining 4.6 s, even with extra trailing silence. Levelling the volume didn't stop it and made transcripts worse.
+  - **Design consequence:** a streaming design needs a safety net. When a pause-cut segment ends, check that the streamed transcripts cover it, and send any uncovered audio to non-streaming STT. On these numbers, non-streaming `gpt-transcribe` matches streaming's total delay without the drop.
+- **Still to confirm:** accuracy, once the owner has corrected the reference transcripts; and how Chirp 3 splits long, continuous narration. Hard rule 9 is rewritten once these hold.
 
 ## Data retention (ZDR) and the primary translation model
 

@@ -23,6 +23,8 @@ import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+import numpy as np
+
 from lib import audio, config
 from lib.config import OUT, RECORDINGS
 from lib.records import append_jsonl, done_keys, read_csv, read_jsonl
@@ -41,9 +43,11 @@ RUNS = {
 }
 
 
-def read_pcm(path: Path) -> bytes:
+def read_pcm(path: Path, target_dbfs: float | None) -> bytes:
+    """Chunk audio, levelled to target_dbfs (as the app must do before streaming)."""
     with wave.open(str(path)) as w:
-        return w.readframes(w.getnframes())
+        pcm = np.frombuffer(w.readframes(w.getnframes()), np.int16)
+    return (audio.normalize(pcm, target_dbfs) if target_dbfs is not None else pcm).tobytes()
 
 
 def stream_chunk(stt: GoogleStreamingStt, chunk: dict, run: str, phrases, stream_cfg) -> dict:
@@ -51,7 +55,7 @@ def stream_chunk(stt: GoogleStreamingStt, chunk: dict, run: str, phrases, stream
     record = {"chunk_id": chunk["chunk_id"], "set": chunk["set"], "run": run}
     try:
         r = stt.stream(
-            read_pcm(OUT.parent / chunk["path"]),
+            read_pcm(OUT.parent / chunk["path"], stream_cfg.get("target_rms_dbfs")),
             languages,
             phrases if hints else None,
             frame_ms=stream_cfg["frame_ms"],
@@ -77,7 +81,7 @@ def run_chunks(args, cfg, stt, phrases) -> None:
     chunks = read_csv(OUT / "chunks" / "manifest.csv")
     if not chunks:
         raise SystemExit("No chunks yet: run 01_prepare_clips.py first.")
-    done = done_keys(read_jsonl(RUNS_FILE), ("chunk_id", "run"))
+    done = set() if args.force else done_keys(read_jsonl(RUNS_FILE), ("chunk_id", "run"))
     only = set(filter(None, args.runs.split(",")))
     jobs = []
     for run, (sets, *_rest) in RUNS.items():
@@ -114,6 +118,8 @@ def run_continuous(args, cfg, stt, phrases) -> None:
     stream_cfg = cfg["stt"]["google"]["streaming"]
     for path in files:
         pcm = audio.decode(path)[: int(args.seconds * audio.RATE)]
+        if stream_cfg.get("target_rms_dbfs") is not None:
+            pcm = audio.normalize(pcm, stream_cfg["target_rms_dbfs"])
         r = stt.stream(
             pcm.tobytes(),
             GUIDE,
@@ -151,6 +157,9 @@ def main() -> None:
     parser.add_argument("--parallel", type=int, default=4, help="streams at a time")
     parser.add_argument("--continuous", action="store_true", help="whole guide recordings")
     parser.add_argument("--seconds", type=float, default=120, help="--continuous: per file")
+    parser.add_argument(
+        "--force", action="store_true", help="re-run chunks already done (the newest run counts)"
+    )
     args = parser.parse_args()
 
     cfg = config.load()

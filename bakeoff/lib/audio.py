@@ -87,6 +87,22 @@ def split_at_pauses(
     ]
 
 
+def normalize(pcm: np.ndarray, target_dbfs: float = -20.0, max_gain_db: float = 20.0) -> np.ndarray:
+    """Scale speech to a steady loudness (RMS in dBFS), without clipping. The gain is capped so
+    near-silence isn't blown up into noise.
+
+    Tested as a fix for Chirp 3 streaming dropping speech (2026-10-23) and rejected: it didn't
+    stop the drop and made transcripts worse. Kept for the option in config.yaml."""
+    samples = pcm.astype(np.float64)
+    rms = np.sqrt(np.mean(samples**2)) if len(samples) else 0.0
+    if rms == 0:
+        return pcm.astype(np.int16)
+    gain_db = min(max_gain_db, target_dbfs - 20 * np.log10(rms / 32768.0))
+    peak = np.abs(samples).max()
+    gain = min(10 ** (gain_db / 20), 32767 / peak)  # never clip
+    return np.round(samples * gain).astype(np.int16)
+
+
 def wav_bytes(pcm: np.ndarray, rate: int = RATE) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:

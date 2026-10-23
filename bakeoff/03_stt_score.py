@@ -36,6 +36,16 @@ def fmt(value, pattern="{:.2f}s") -> str:
     return "-" if value is None else pattern.format(value)
 
 
+def speech_dropped(record: dict, margin_s: float = 1.0) -> bool:
+    """Streaming only: the final transcripts stop more than margin_s before the chunk's speech
+    ends, so the rest was never transcribed (seen on chunk 6-0008, 2026-10-23)."""
+    finals = record.get("finals")
+    if finals is None:
+        return False
+    covered = max((f["audio_end_s"] for f in finals), default=0.0)
+    return covered < record["duration_s"] - margin_s
+
+
 def junk_filter_section(records: dict, scoring_cfg: dict) -> list[str]:
     """Junk-filter layer 2 (decided 2026-10-23): split each Guide-mode transcript into
     sentences and drop a sentence when Cantonese-only characters exceed a share of it. Compares
@@ -105,8 +115,9 @@ def main() -> None:
         "adds ~0.7 s of pause detection and the upload; for `chirp3-stream*` runs it is the time",
         "from the end of speech to the final transcript, which is all the app waits.",
         "",
-        "| Set | Run | Reviewed chunks | Error rate | Median latency | p90 latency |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Set | Run | Reviewed chunks | Error rate | Median latency | p90 latency "
+        "| Speech dropped |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for set_name in ("guide", "yue", "en"):
         runs = sorted({run for (_, run), r in records.items() if r["set"] == set_name})
@@ -117,11 +128,15 @@ def main() -> None:
                 if r["chunk_id"] in reviewed:
                     e, n = char_edits(reviewed[r["chunk_id"]], r["text"], SCRIPT[set_name])
                     edits, length, scored = edits + e, length + n, scored + 1
-            latencies = [r["latency_s"] for r in rows]
+            # A negative streaming latency means the last final came before speech ended: the
+            # end of the chunk was never transcribed, so it can't count as a latency.
+            latencies = [r["latency_s"] for r in rows if (r["latency_s"] or 0) >= 0]
+            dropped = [r for r in rows if speech_dropped(r)]
             lines.append(
                 f"| {set_name} | {run} | {scored} | "
                 f"{fmt(edits / length if length else None, '{:.1%}')} | "
-                f"{fmt(median(latencies))} | {fmt(percentile(latencies, 90))} |"
+                f"{fmt(median(latencies))} | {fmt(percentile(latencies, 90))} | "
+                f"{f'{len(dropped)} of {len(rows)}' if 'finals' in rows[0] else '-'} |"
             )
 
     lines += junk_filter_section(records, cfg["scoring"])

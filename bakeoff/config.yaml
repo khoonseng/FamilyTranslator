@@ -16,6 +16,10 @@ stt:
     streaming:
       frame_ms: 100             # 3.2 KB per message; Google's cap is 25 KB
       tail_silence_s: 1.0       # silence after each chunk so Chirp 3 notices the pause
+      # Level speech to this loudness (dBFS) before streaming; null = off. Tested 2026-10-23 on
+      # the WeChat clips and rejected: levelled to -20 dBFS, Chirp 3 still dropped the same
+      # 4.6 s of chunk 6-0008 (8 of 8 runs) and misheard more (火锅 -> 佛宗).
+      target_rms_dbfs: null
   openai:
     # Fallback candidates (decided 2026-10-23): one is kept, run on the saved audio.
     models: [gpt-4o-transcribe, gpt-transcribe]

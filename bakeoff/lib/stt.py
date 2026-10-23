@@ -110,6 +110,7 @@ class StreamResult:
 
 _Sensitivity = cs.StreamingRecognitionFeatures.EndpointingSensitivity
 _ENDPOINTING = {
+    "default": _Sensitivity.ENDPOINTING_SENSITIVITY_UNSPECIFIED,  # Google's choice
     "standard": _Sensitivity.ENDPOINTING_SENSITIVITY_STANDARD,
     "short": _Sensitivity.ENDPOINTING_SENSITIVITY_SHORT,
     "supershort": _Sensitivity.ENDPOINTING_SENSITIVITY_SUPERSHORT,
