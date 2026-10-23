@@ -123,6 +123,9 @@ def main() -> None:
     parser.add_argument("--configs", default="", help="only these configs (comma-separated)")
     parser.add_argument("--repeats", type=int, default=3, help="runs per guide sentence")
     parser.add_argument("--guide-sentences", type=int, default=5)
+    parser.add_argument(
+        "--skip-drafted", action="store_true", help="leave out sentences.yaml (real ones only)"
+    )
     parser.add_argument("--directions", default="guide_to_family,family_to_guide")
     parser.add_argument("--limit", type=int, default=0, help="sentences per direction (trial)")
     parser.add_argument(
@@ -134,6 +137,8 @@ def main() -> None:
 
     cfg = config.load()
     sentences = build_sentences(args.guide_sentences, cfg["llm"].get("context_sentences", 2))
+    if args.skip_drafted:
+        sentences = [x for x in sentences if not x["id"].startswith("draft-")]
     directions = set(args.directions.split(","))
     names = list(cfg["llm"]["configs"]) + ["cloud-translate"]
     if cfg["mt"]["google"].get("glossary_id"):
