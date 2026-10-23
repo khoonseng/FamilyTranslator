@@ -16,10 +16,10 @@ phones play Cantonese audio with large-font text. All phones use Singapore roami
 - Phase: **Week 1 — Cantonese bake-off** (update this line as phases complete)
 - Trip: **19–23 Dec 2026** (5 days). Trip configuration incl. the always-on instance goes live 15 Dec.
 - Tech stack: **Python/FastAPI backend, Vue 3 frontend** — see "Stack" below
-- Primary translation model: **Gemini won the bake-off**; it is primary if Google grants the
-  Vertex AI abuse-monitoring exception by 15 Nov 2026, otherwise Qwen on Groq (see "Stack")
-- ZDR: waiting on Google for (a) the Vertex AI abuse-monitoring exception and (b) written
-  confirmation that Text-to-Speech doesn't retain text
+- Primary translation model: **Gemini on Vertex AI** (bake-off winner; decided 2026-10-24,
+  whatever Google answers on abuse monitoring), then Qwen on Groq, then Cloud Translation
+- ZDR: Google's abuse-monitoring logging for Gemini and Google's standard Text-to-Speech terms
+  are accepted (owner, 2026-10-24); the two requests to Google are optional
 
 ## Users and channels
 
@@ -154,12 +154,19 @@ Build order:
 13. Half-duplex capture: any phone with an open mic (always the hub) pauses capture while it
     plays audio and resumes when playback ends, so it never re-captures its own output. Open the
     mic with `echoCancellation: true` as a second layer only. (Traverba looped forever without this.)
-14. Zero data retention (ZDR) at every provider. No provider may keep conversation data:
+14. Zero data retention (ZDR) at every provider. No provider may keep conversation data, except
+    the two Google exceptions below:
     - Google STT: sync (or streaming) requests only. Never call the async/batch endpoint and never
       opt into Speech-to-Text data logging.
     - Gemini: Vertex AI only, never the AI Studio / Gemini API free tier (it may train on prompts).
-      In-memory caching disabled on the project; abuse-monitoring exception requested.
+      In-memory caching disabled on the project. Exception (owner-approved 2026-10-24): Google may
+      keep prompts and replies for abuse monitoring unless it grants the exception; accepted
+      for Gemini only, so Google stays the main translator either way.
+    - Google Text-to-Speech. Exception (owner-approved 2026-10-24): Google's standard terms are
+      accepted even without written confirmation that it keeps no text (it receives only the
+      Cantonese translation).
     - Groq: Zero Data Retention switched on in Data Controls.
+    - OpenAI transcription and Google Cloud Translation: no retention by default; keep it so.
     - Logs: request IDs, timings and errors only. Never log transcripts, translations or audio.
     - Exception, our own storage (owner-approved 2026-10-13): the Cloud Storage bucket keeps clips
       and transcripts for 30 days so the owner can download them. Lifecycle rule deletes objects
@@ -196,12 +203,12 @@ AI providers (all must meet hard rule 14; the week-1 bake-off confirms or promot
 | Translation | Gemini 3.6 Flash on Vertex AI (bake-off winner), reasoning minimal, temperature 0.2 | Groq `qwen/qwen3.8-27b` (Preview: re-check the ID before the trip), then Google Cloud Translation v3 as last resort |
 | TTS | Google Chirp 3 HD, Cantonese voice `yue-HK-Chirp3-HD-Despina` (in-laws' pick) | Older Google voice `yue-HK-Standard-A` |
 
-Primary translation model rule (both LLM providers stay configured, each the other's fallback):
-- Gemini won the bake-off (2026-10-24), so Gemini on Vertex AI is primary if Google grants the
-  abuse-monitoring exception; otherwise Qwen on Groq is primary.
-- Groq's model is Qwen3.8-27B, which clearly beat gpt-oss-120b. If Groq withdraws the Qwen
-  preview, `openai/gpt-oss-120b` takes its place.
-- Deadline 15 Nov 2026 (end of week 5). Whatever stands then is the trip configuration.
+Translation order (decided 2026-10-24):
+- Gemini on Vertex AI is primary: it won the bake-off, and Google's abuse-monitoring logging
+  is accepted if the exception isn't granted (hard rule 14).
+- Qwen3.8-27B on Groq is the fallback; it clearly beat gpt-oss-120b. If Groq withdraws the
+  Qwen preview, `openai/gpt-oss-120b` takes its place. Re-check the Groq model ID before the trip.
+- Google Cloud Translation is the last resort when both fail (hard rule 4).
 
 Not used: Azure (one cloud only), self-hosted or on-device models (no wav2vec, no Hugging
 Face weights), Groq TTS (no Chinese voices), the Gemini API / AI Studio free tier (fails ZDR),
@@ -267,12 +274,12 @@ Dockerfile
       15–20 Chongqing-accented, fast narration clips; measure streaming's end-of-speech-to-text
       delay; and set the junk filter's Cantonese-character share from how often it drops real
       guide sentences vs family chatter. Test on the family's iPhones whether listener audio keeps
-      playing with the screen locked. Enable billing with a budget alert; send Google both ZDR
-      requests (Vertex AI abuse-monitoring exception; written confirmation of Text-to-Speech retention).
+      playing with the screen locked. Enable billing with a budget alert. (Google's two ZDR
+      requests became optional on 2026-10-24: both outcomes are accepted.)
 - [ ] Weeks 2–3 — Single-device MVP, guide → family: hub records Mandarin (or takes typed
       Mandarin), shows Cantonese text and plays Cantonese audio on earphones; adapters in place.
 - [ ] Weeks 4–5 — Rooms (QR join), WebSocket fan-out, listener PWA, player states, cache, backfill;
-      English text if time permits. Lock the primary translation model by 15 Nov.
+      English text if time permits. (Primary translation model already decided: Gemini.)
 - [ ] Weeks 6–7 — Switch to the trip configuration first (see "Billing and plans"). Then field
       tests in Singapore with the family's own phones in noisy places. Compare transcripts from
       the spare hub phone on the "guide's" lanyard against a clip-on to decide whether to buy a
@@ -404,6 +411,11 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   Cantonese took 90% of the guides' speaking time on 21 real sentences. For long fast stretches,
   a "Jump to latest" button (owner's choice over an automatic 1.1×: simpler, and the voice
   never changes); see hard rule 11.
+- 2026-10-24 — Stick with Google regardless of its data-retention answers (owner decision):
+  Google may keep Gemini prompts for abuse monitoring if the exception isn't granted, and
+  Text-to-Speech runs on Google's standard terms; both are recorded exceptions in hard rule 14.
+  Gemini is therefore the primary translator now, not "if granted by 15 Nov"; the requests to
+  Google are optional.
 - 2026-10-24 — Translation prompt rules for live speech (false starts, word swaps such as
   第二天 → 第二日 without changing the day or time, no repeats) adopted after runs 4–5: Gemini's
   Mandarin-word slips fell from 15 to 0 on 21 real sentences.

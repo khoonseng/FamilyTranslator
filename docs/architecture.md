@@ -163,7 +163,7 @@ Google Cloud is the primary provider for every stage, each stage has a fallback 
 | Stage | Primary | Fallback | Notes |
 | --- | --- | --- | --- |
 | STT, Mandarin, Cantonese and English | Google Speech-to-Text V2, `chirp_3` model, **streaming** (decided 24 Oct): cmn-Hans-CN (GA), yue-Hant-HK (Preview), en-US. Runs only in the `us` and `eu` multi-regions. The glossary is also passed as phrase biasing | OpenAI `gpt-transcribe` (US$0.0045/min) on the saved audio segments: the **safety net** for gaps Chirp 3 leaves, and the **fallback** when the stream fails | On 16 real guide clips, `gpt-transcribe` scored 12.7% error and Chirp 3 streaming 13.4% (excluding one clip it cut short); `gpt-4o-transcribe` scored 32.3% and is not used. The family recordings will check that `gpt-transcribe` doesn't return Mandarin-style text for Cantonese speech. Chirp 3 costs US$0.016/min after 60 free minutes a month, so the trip's ~900 minutes cost about US$13 or come out of Google's free-trial credit |
-| Translation | Gemini 3.6 Flash on **Vertex AI**, the bake-off winner (decided 24 Oct; primary if Google grants the abuse-monitoring exception, see the rule below) | Groq `qwen/qwen3.8-27b` (Preview; `openai/gpt-oss-120b` if it is withdrawn), then Google Cloud Translation v3 as the last resort | In-laws' blind test: Gemini best for 7 of 10 sentences, Qwen 2, gpt-oss 1, Cloud Translation 0 |
+| Translation | Gemini 3.6 Flash on **Vertex AI**, the bake-off winner (decided 24 Oct; primary regardless of Google's abuse-monitoring answer) | Groq `qwen/qwen3.8-27b` (Preview; `openai/gpt-oss-120b` if it is withdrawn), then Google Cloud Translation v3 as the last resort | In-laws' blind test: Gemini best for 7 of 10 sentences, Qwen 2, gpt-oss 1, Cloud Translation 0 |
 | TTS, Cantonese and Mandarin | Google Chirp 3 HD, Cantonese voice **`yue-HK-Chirp3-HD-Despina`** (decided 24 Oct), one non-streaming request per sentence returning MP3 | Older Google voice `yue-HK-Standard-A` | In-laws' blind test: Despina 2 votes, Standard-A 2, Zephyr 1, Iapetus 0. MP3 because it plays on every iPhone; Ogg Opus support in iOS Safari is unconfirmed, and per-sentence clips gain little from streaming |
 | Pause detection | Silero VAD in the browser (`@ricky0123/vad-web`) | None | 15-second chunk cap; the server splits long transcripts at punctuation |
 
@@ -248,15 +248,15 @@ Non-streaming Chirp 3 took about 3 s to transcribe a 5-second clip, on top of ab
 
 ## Data retention (ZDR) and the primary translation model
 
-Every provider in the stack must keep zero data from the family's conversations; two items depend on Google approving or confirming them, so both requests go in during week 1.
+Every provider in the stack must keep zero data from the family's conversations, with two accepted Google exceptions (decided 24 Oct): the app sticks with Google whatever Google answers. The two requests to Google are now optional.
 
 | Provider | ZDR status | Action needed |
 | --- | --- | --- |
 | Google Speech-to-Text (sync) | Met by default: audio processed in memory, nothing stored | Never opt into data logging; never use the async (batch) endpoint |
 | OpenAI transcription (STT fallback) | Met by default: no training, no abuse-monitoring or application-state retention on this endpoint | None |
-| Gemini on Vertex AI | Achievable, not automatic | Disable in-memory caching on the project; request Google's abuse-monitoring exception; confirm Gemini 3.6 Flash qualifies |
+| Gemini on Vertex AI | Accepted exception: Google may keep prompts and replies for abuse monitoring unless it grants an exception | Disable in-memory caching on the project; requesting the exception is optional |
 | Groq | Self-serve | Switch on Zero Data Retention in Data Controls |
-| Google Text-to-Speech | Not yet confirmed in writing | Ask Google support, or check the Cloud data processing terms |
+| Google Text-to-Speech | Accepted exception: Google's standard terms, without written confirmation of no retention (it receives only the Cantonese translation) | None; asking Google is optional |
 
 **Our own app: logs follow ZDR, storage is a deliberate exception**
 
@@ -267,11 +267,11 @@ Every provider in the stack must keep zero data from the family's conversations;
   - The bucket is private. Clips reach phones only through the app, checked against the room token, never as public links.
 - Listener phones keep their IndexedDB cache; there is no end-of-day clear. Saving or exporting a bubble and browsing previous days come after the trip; until then, downloads are done manually from the bucket.
 
-**Choosing the primary translation model**
+**The translation order (decided 24 Oct)**
 
-Groq and Gemini on Vertex AI are both configured, each as the other's fallback, because their failures are unrelated: Groq fails by hitting fixed caps, Vertex AI by a busy shared pool returning 429 errors.
+Gemini on Vertex AI is primary, Qwen on Groq the fallback and Cloud Translation the last resort. Gemini and Groq fail in unrelated ways: Groq by hitting fixed caps, Vertex AI by a busy shared pool returning 429 errors.
 
-This is real, not theoretical. In translation bench run 2 (23 Oct), Vertex AI refused **38 of 100 Gemini requests with 429** and timed out on 4 more, while the morning's run 1 had none. Groq refused 1 of 61 requests, on its Free plan, and Cloud Translation none. So if Gemini is primary, a 429 must fail over to Groq on the same sentence at once, with no waiting or retrying.
+This is real, not theoretical. In translation bench run 2 (23 Oct), Vertex AI refused **38 of 100 Gemini requests with 429** and timed out on 4 more, while the morning's run 1 had none. Groq refused 1 of 61 requests, on its Free plan, and Cloud Translation none. So a 429 must fail over to Groq on the same sentence at once, with no waiting or retrying.
 
 **First translation findings (bench runs 1–2, 10 drafted sentences, AI-read; the in-laws' blind test decides):**
 
@@ -282,11 +282,10 @@ This is real, not theoretical. In translation bench run 2 (23 Oct), Vertex AI re
 | gpt-oss 0.2 | Steady | Repeated grammar slip (人好多人) | 1.0 s |
 | Cloud Translation | No errors and identical every time | Stiff, Mandarin-style wording | 0.2 s |
 
-- **Gemini won the bake-off (24 Oct),** so it is primary if Google grants the abuse-monitoring exception; otherwise Qwen on Groq is primary.
+- **Gemini won the bake-off (24 Oct)** and is the primary translator, whether or not Google grants the abuse-monitoring exception (accepted exception, hard rule 14).
 - **Groq's model is Qwen3.8-27B,** which clearly beat gpt-oss-120b (in-laws: 2 picks to 1, naturalness 2.0 to 1.7; on real speech gpt-oss once reversed a negation). Because Qwen is a Groq Preview model, `openai/gpt-oss-120b` stays configured to take its place if Groq withdraws it.
-- Deadline: end of week 5, **15 Nov 2026**. Whatever the status is then is what the trip uses, so the field tests run on the final stack.
 
-**If Google cannot confirm Text-to-Speech retention,** no ZDR-verified Cantonese voice remains among the providers considered. That would need a new search for a ZDR-compliant Cantonese TTS provider, or a decision to accept Google's terms.
+**Text-to-Speech:** no ZDR-verified Cantonese voice exists among the providers considered, so Google's standard terms are accepted (decided 24 Oct).
 
 ## Listener experience and playback rules
 
@@ -538,22 +537,19 @@ gantt
   Chongqing trip             :a6, 2026-12-19, 5d
 ```
 
-1. **Week 1, Cantonese bake-off.** Run 10–15 recorded Mandarin narration sentences through 2–3 translation models and 2–3 Cantonese voices, blind, for the in-laws to judge. Score each Cantonese STT on their recorded questions. Google Cloud Translation runs alongside the LLMs as a candidate. Check every model's Cantonese for colloquial markers (佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢) and confirm each voice is a true yue-HK voice, not a Mandarin voice reading Traditional characters. Score Mandarin speech-to-text (Chirp 3 sync and streaming, `gpt-4o-transcribe`, `gpt-transcribe`) on 15–20 clips of Chongqing-accented, fast guide narration; measure streaming's delay from end of speech to final transcript; and set the junk filter's Cantonese-character share from real guide sentences versus family chatter. Run each translation model with reasoning off and on its lowest setting, and Qwen and gpt-oss at two temperatures. Test on the family's iPhones whether listener audio keeps playing with the screen locked. Deploy a test service to `us-central1`, measure time-to-first-audio and confirm the eSIM's routing. Enable billing with a budget alert, and send Google both ZDR requests (the Vertex AI abuse-monitoring exception and written confirmation of Text-to-Speech retention).
+1. **Week 1, Cantonese bake-off.** Run 10–15 recorded Mandarin narration sentences through 2–3 translation models and 2–3 Cantonese voices, blind, for the in-laws to judge. Score each Cantonese STT on their recorded questions. Google Cloud Translation runs alongside the LLMs as a candidate. Check every model's Cantonese for colloquial markers (佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢) and confirm each voice is a true yue-HK voice, not a Mandarin voice reading Traditional characters. Score Mandarin speech-to-text (Chirp 3 sync and streaming, `gpt-4o-transcribe`, `gpt-transcribe`) on 15–20 clips of Chongqing-accented, fast guide narration; measure streaming's delay from end of speech to final transcript; and set the junk filter's Cantonese-character share from real guide sentences versus family chatter. Run each translation model with reasoning off and on its lowest setting, and Qwen and gpt-oss at two temperatures. Test on the family's iPhones whether listener audio keeps playing with the screen locked. Deploy a test service to `us-central1`, measure time-to-first-audio and confirm the eSIM's routing. Enable billing with a budget alert. (Google's two data-retention requests became optional on 24 Oct, since both outcomes are accepted.)
 2. **Weeks 2–3, single-device MVP (guide → family).** The hub records Mandarin or takes typed Mandarin, shows Cantonese text and plays Cantonese audio on earphones, with provider adapters in place.
-3. **Weeks 4–5, rooms and listener PWA.** QR join, WebSocket fan-out, bubbles, player states, on-phone cache, reconnect and backfill; English text if time permits. Lock the primary translation model by 15 Nov.
+3. **Weeks 4–5, rooms and listener PWA.** QR join, WebSocket fan-out, bubbles, player states, on-phone cache, reconnect and backfill; English text if time permits. (The primary translation model was settled on 24 Oct: Gemini.)
 4. **Weeks 6–7, field tests in Singapore.** Everything first switches to its trip configuration (Groq Developer plan, OpenAI credit topped up, budget alert raised). The family uses their own phones in noisy places such as hawker centres and the MRT, with someone acting as the Mandarin guide and wearing the spare hub phone. Compare its transcripts against a clip-on to decide whether to buy a mic. Phase 2 (family → guide) starts only once guide → family passes.
 5. **Weeks 8–10 (30 Nov–18 Dec), buffer.** Fixes; phase 2 (family → guide) if guide → family has passed; briefing the family on joining the room, replay and "Become hub". On 15 Dec, switch on the always-on instance.
 6. **Trip, 19–23 Dec.** On 24 Dec, set `min-instances` back to 0.
 
 ## Open decisions
 
-Nine decisions remain. Decided on 24 Oct: normal-speed playback (1.0×) with a "Jump to latest" button; Chirp 3 streaming as the speech-to-text, with `gpt-transcribe` as safety net and fallback; Gemini as the bake-off winner, Qwen as the Groq model and Cloud Translation as the last-resort fallback; Despina as the Cantonese voice with Standard-A as fallback. Decided on 23 Oct: Chirp 3 streaming as the target design, one OpenAI fallback for speech-to-text, a sentence-level Cantonese-character junk filter, and per-model temperature. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
+Six decisions remain. Decided on 24 Oct: Gemini as the primary translator regardless of Google's answers, with Google's abuse-monitoring logging and standard TTS terms accepted; normal-speed playback (1.0×) with a "Jump to latest" button; Chirp 3 streaming as the speech-to-text, with `gpt-transcribe` as safety net and fallback; Gemini as the bake-off winner, Qwen as the Groq model and Cloud Translation as the last-resort fallback; Despina as the Cantonese voice with Standard-A as fallback. Decided on 23 Oct: Chirp 3 streaming as the target design, one OpenAI fallback for speech-to-text, a sentence-level Cantonese-character junk filter, and per-model temperature. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
 
 - [ ] Get the spare hub phone and its eSIM or physical SIM; confirm the line routes outside China
 - [ ] Whether the guide will be driving or seated separately (affects phone placement in the car)
-- [ ] Google's answer on the Vertex AI abuse-monitoring exception (request in week 1)
-- [ ] Google's written confirmation that Text-to-Speech doesn't retain text (request in week 1)
-- [ ] Primary translation model: Gemini won the bake-off; it is primary only if Google grants the abuse-monitoring exception by 15 Nov, otherwise Qwen
 - [ ] The junk filter's Cantonese-character share, after a family chatter recording
 - [ ] New-bubble cue while paused: chime or animation (every family phone is an iPhone, and iOS Safari can't vibrate)
 - [ ] Clip-on mic for the guide: only if the weeks 6–7 field test shows phone-only is not enough
