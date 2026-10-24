@@ -302,7 +302,9 @@ Dockerfile
 - [ ] Weeks 6–7 — Switch to the trip configuration first (see "Billing and plans"). Then field
       tests in Singapore with the family's own phones in noisy places. Compare transcripts from
       the spare hub phone on the "guide's" lanyard against a clip-on to decide whether to buy a
-      mic. Phase 2 (family → guide) starts only once guide → family passes.
+      mic. Measure time-to-first-audio on the real app (about 4.2 s in week 1, accepted) and
+      ask the family whether it feels fast enough. Phase 2 (family → guide) starts only once
+      guide → family passes.
 - [ ] Weeks 8–10 (30 Nov–18 Dec) — Buffer, fixes, phase 2 if guide → family has passed, family
       briefing. 15 Dec: `min-instances=1` on. Trip 19–23 Dec; `min-instances=0` on 24 Dec.
 
@@ -458,3 +460,8 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   day (24 of 93 calls over 4 s, 11 failed). Owner decision: Gemini stays primary, but fails over
   to Qwen past a ~2.5 s deadline for `yue` or when `yue` contains Latin letters (hard rule 6).
   Re-measure Gemini on another day.
+- 2026-10-24 — Time-to-first-audio of about 4.2 s is accepted (owner decision). Week-1 test
+  service in `us-central1`, iPhone on Singapore mobile data, 10 runs: median 4.16 s (3.84–6.54
+  s): Chirp 3 final 1.8 s, Gemini 1.0 s, TTS 0.9 s, MP3 download 0.4 s, slightly over the 2–4 s
+  target. Re-measured on the real app in the weeks 6–7 field tests with the family; speed-ups
+  only if it feels too slow there.
