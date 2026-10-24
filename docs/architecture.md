@@ -209,10 +209,13 @@ Google Cloud is the primary provider for every stage, each stage has a fallback 
 
 **Translation call design.** One LLM call per sentence returns the target languages as JSON, never the source language: guide speech returns `yue` (and `en` once English is added), and family speech in phase 2 returns `zh_hans` plus whichever of `yue` or `en` wasn't spoken. The transcript itself is the source-language text, so the model can't reword what was said, and fewer output tokens means less waiting. The field TTS needs comes first and is streamed, so TTS can start as soon as it closes. The prompt carries a glossary of Chongqing place and dish names (解放碑, 洪崖洞, 磁器口, 毛血旺) and only the last 2–3 utterances as context.
 
-**Prompt rules proven in the bake-off (24 Oct, `bakeoff/prompts/guide_to_family.md`):**
-- **Speech-recognition input:** the guide's words may contain false starts, repeats, filler and recognition errors. Say what the guide means, cleanly, without changing statements, questions, negations or facts.
-- **Word swaps, without changing which day, time or person is meant:** 第二天 → 第二日, 每天 → 每日, 明天 → 聽日 (only where the guide said 明天), 早上 → 朝早 (never adding a time the guide didn't say), 您/你们 → 你/你哋, 这样 → 咁樣, 很 → 好.
-- **No accidental repeats** (返返).
+**Prompt rules proven in the bake-off (runs 4–6, 24 Oct, `bakeoff/prompts/guide_to_family.md`):**
+- **Speech-recognition input:** the guide's words may contain false starts, repeats and filler. Say what the guide means, cleanly, without changing statements, questions, negations or facts, and never turn an action into its opposite.
+- **Cantonese words, same meaning:** 第二天 → 第二日, 每天 → 每日, 明天 → 聽日 (only where the guide said 明天), 您/你们 → 你/你哋, 这样 → 咁樣, 很 → 好; times of day as notes (朝早 for 早上, 夜晚 or 晚黑 for 晚上), each only where the guide said that time.
+- **Change only words Cantonese says differently;** words it shares with Mandarin (排隊, 拍照, 坐車) stay as they are.
+- **No accidental repeats.**
+
+Two lessons from run 6 (decided 24 Oct). Telling Gemini to "swap Mandarin words for Cantonese ones" made it over-swap: on 洪崖洞晚上七点半以后开灯 it turned 開燈 ("lights on") into 熄燈 ("lights off") in 7 of 16 outputs; with "change only words Cantonese says differently" it did so in 0 of 12. Inviting it to fix "small recognition errors" let it "correct" words that were right (熄燈……唔係，開燈). Mandarin words left in and times the guide never said stayed at 0 of 93 for both Gemini and Qwen.
 
 On 21 real guide sentences, these took Gemini from 12 day-word slips (天) and 3 other Mandarin words to none. A first wording that listed 聽日 and 朝早 as examples made Qwen invent "tomorrow" and "morning" (4 errors); listing them as substitutions fixed it.
 
@@ -245,6 +248,10 @@ Gemini at 0.2 was also faster. Google's advice to keep 1.0 is mainly about reaso
 - **Role (decided 24 Oct): last-resort fallback.** It translates a sentence only when both Gemini and Qwen have failed on it. In the bake-off it never added an error and was by far the fastest (0.2 s). But it was the in-laws' least-liked option (best for 0 of 10 sentences), and on real speech it copies the guide's false starts word for word (佢係佢都係有嗰個清), so it is not used otherwise. Hard rules 4 and 6 are worded to allow this.
 
 **Failover.** If a provider errors or is too slow on a sentence, that sentence goes to the next provider at once: Gemini → Qwen on Groq → Cloud Translation. Vertex AI 429s are never retried, since they can last for long stretches. Only if all three fail does the app show the transcript and flag the hub operator to interpret.
+
+**Gemini deadline and junk check (decided 24 Oct).** Two more triggers send a sentence to Qwen:
+- **Deadline:** Gemini's `yue` must be complete within about 2.5 s (tuned in testing). In run 6, 24 of 93 Gemini calls took over 4 s, the slowest 14 s, and 11 failed outright (7 refusals, 4 timeouts at 20 s); Qwen's slowest was 0.9 s. Gemini's median was 2.05 s that day, against 1.49 s on 23 Oct.
+- **Junk check:** if `yue` contains Latin letters, Qwen's translation is used instead. Gemini occasionally writes a junk word whatever the prompt (多 goods for "lots of people", "processing", "paddingTop"); the original prompt did it too on the day of run 6. The check catches the English ones. Chinese junk such as 好多年夜食 ("lots of New Year's Eve food" for "lots of snacks") gets through; it appeared in 3 of 93 run-6 outputs, all on one drafted sentence, and never on the guides' real sentences.
 
 **Ruled out.** OpenAI GPT-Realtime-Translate (no Cantonese output voice), conversational realtime models (an assistant, not an interpreter), Groq TTS (no Chinese voices, and Groq does not host Qwen3-TTS), the Gemini API free tier in AI Studio (prompts may be used to improve Google's models, so it fails ZDR), Qwen3-TTS on Alibaba Model Studio (ZDR only for enterprise customers, and flagged content can be kept for up to 2 years) and Azure Speech (kept to one cloud provider). OpenAI's API has no free tier, so it serves only as a paid STT fallback. OpenAI `gpt-live-transcribe` (US$0.017/min) streams, but only through the Realtime API, which keeps data for 30 days for abuse monitoring unless OpenAI approves zero data retention. A streaming fallback would also add little: it only covers a Chirp 3 outage, and the file-based fallback answered a 5-second clip in about 1–2 s. It would be reconsidered only as a Chirp 3 replacement, and only if OpenAI confirms zero retention in writing.
 
@@ -556,7 +563,8 @@ The biggest risks are audio capture and Cantonese quality, not hosting.
 | Translation slips into formal written Chinese or Mandarin grammar | Cantonese sounds wrong to the in-laws | Colloquial-Cantonese prompt; colloquial-marker check and blind bake-off |
 | iOS audio unlock and screen lock (every family phone is an iPhone) | Listener hears nothing once the screen locks or the phone is pocketed | Tap-to-start on join; Wake Lock API; a silent keep-alive on listener phones (decided 24 Oct after the week-1 test: without it, iOS froze the locked page about 10 s after audio stopped). Radio mode was tested and rejected (about 6 s more delay) |
 | Tunnels and dead zones | Missed bubbles | Reconnect and backfill from the last utterance id |
-| Vertex AI shared pool refuses Gemini requests (429) | Translations stall if the app waits on Gemini | Immediate per-sentence failover to Groq, never retry on Vertex; seen at ~40% of requests in a 23 Oct bench run |
+| Vertex AI shared pool refuses Gemini requests (429) or answers slowly | Translations stall if the app waits on Gemini | Immediate per-sentence failover to Groq, never retry on Vertex; a ~2.5 s deadline on Gemini's `yue`. Seen at ~40% of requests in a 23 Oct bench run; on 24 Oct, 11 of 93 failed and 24 took over 4 s |
+| Gemini writes a junk word (多 goods, 年夜食) | A nonsense word read aloud to the in-laws | Prompt tuned in runs 4–6; Latin letters in `yue` switch the sentence to Qwen. Chinese junk is not caught (3 of 93 outputs in run 6, none on real guide sentences); watch for it in the field tests |
 | Cantonese TTS still in Preview at Google | Voice outage | Adapter failover to Google's older voices; last resort text plus human interpreting |
 | Mandarin vs Cantonese auto-detection | Wrong pipeline | Explicit Guide and Family modes on the hub; the listener Talk button is always family speech |
 | Listener phones playing aloud | Echo and feedback into the hub mic | Earphones for every listener |

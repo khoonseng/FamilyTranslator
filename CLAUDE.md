@@ -99,6 +99,9 @@ Build order:
      a 36x repetition loop and a wrong time.
    - Vertex AI can refuse requests with 429 (busy shared pool) for long stretches: on Vertex,
      fail over to the other provider at once, never wait and retry.
+   - Gemini also fails over to Qwen when its `yue` isn't complete within about 2.5 s (tuned in
+     testing), or when `yue` contains Latin letters (junk words such as "goods"). Run 6: 24 of
+     93 Gemini calls took over 4 s, up to 14 s; Qwen's slowest was 0.9 s.
 7. All provider calls are stateless. Translation context = glossary + last 2–3 utterances, never
    the whole session.
 8. Input language comes from the hub mode (Guide / Family) or, in phase 2, the Talk button on a
@@ -434,7 +437,7 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   Google are optional.
 - 2026-10-24 — Translation prompt rules for live speech (false starts, word swaps such as
   第二天 → 第二日 without changing the day or time, no repeats) adopted after runs 4–5: Gemini's
-  Mandarin-word slips fell from 15 to 0 on 21 real sentences.
+  Mandarin-word slips fell from 15 to 0 on 21 real sentences. (Rules revised in run 6, below.)
 - 2026-10-24 — Family replies (phase 2) come from the family's own phones (owner decision):
   push-to-talk (Cantonese or English) or typing, on phones that have entered the hub PIN (hard
   rule 1; about 3 phones in the private vehicle); phones without it listen only. The guide
@@ -447,3 +450,11 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   locked (Safari tab and Home Screen alike), Web Audio failed at once; radio mode kept playing
   but added about 6 s of buffering; the two-player keep-alive played every clip on schedule
   after about 50 s of silence, with no added delay, in Safari and from the Home Screen.
+- 2026-10-24 — Translation run 6 (31 sentences × 3, Gemini and Qwen): new prompt rules (change
+  only words Cantonese says differently; times of day as notes; no "small recognition errors";
+  never turn an action into its opposite). The run-5 rules made Gemini turn 開燈 into 熄燈 in 7
+  of 16 outputs; now 0 of 12, with Mandarin words and added times still 0 of 93. Gemini still
+  writes an occasional junk word under any prompt (多 goods, 年夜食; 4 of 93), and was slow that
+  day (24 of 93 calls over 4 s, 11 failed). Owner decision: Gemini stays primary, but fails over
+  to Qwen past a ~2.5 s deadline for `yue` or when `yue` contains Latin letters (hard rule 6).
+  Re-measure Gemini on another day.
