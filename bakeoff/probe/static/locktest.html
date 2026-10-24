@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lock test">
+<title>Lock test</title>
+<style>
+  body { font: 16px/1.4 -apple-system, system-ui, sans-serif; margin: 0 16px 32px; }
+  h1 { font-size: 22px; }
+  label { display: block; font-size: 18px; padding: 10px 0; }
+  button { font-size: 20px; padding: 14px 20px; border-radius: 10px; border: 0;
+           background: #1a73e8; color: #fff; width: 100%; margin-top: 8px; }
+  button.stop { background: #c62828; }
+  .note { color: #555; font-size: 14px; }
+  #summary { font-size: 18px; font-weight: 600; margin: 12px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  td { padding: 3px 4px; border-bottom: 1px solid #eee; }
+  button:disabled { background: #999; }
+  .err { color: #c00; }
+  .token input { font-size: 18px; padding: 10px; width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+  .token { margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<h1>Locked-screen audio test</h1>
+<p>Running as: <b id="context"></b></p>
+<div id="tokenBox" class="token" hidden>
+  <p>Enter the probe token (<code>PROBE_TOKEN</code> in <code>bakeoff/.env</code>). This phone
+  remembers it; a Home Screen app asks once more.</p>
+  <input id="tokenInput" type="password" autocomplete="off" autocapitalize="off" placeholder="Probe token">
+  <button id="tokenSave">Save</button>
+  <p id="tokenMsg" class="err"></p>
+</div>
+<div id="setup">
+  <label><input type="radio" name="mode" value="keepalive-one" checked> Clips + silent keep-alive, one player</label>
+  <label><input type="radio" name="mode" value="keepalive-two"> Clips + silent keep-alive, two players</label>
+  <label><input type="radio" name="mode" value="clips-element"> Clips over WebSocket, audio element (failed 24 Oct)</label>
+  <label><input type="radio" name="mode" value="clips-webaudio"> Clips over WebSocket, Web Audio (failed 24 Oct)</label>
+  <label><input type="radio" name="mode" value="radio"> Radio: one continuous stream (passed 24 Oct)</label>
+  <p class="note">Keep-alive: the phone loops silence it makes itself (nothing to hear, nothing
+  sent over the network), so iOS keeps the page running between clips.</p>
+  <p><b>A clip every:</b></p>
+  <label><input type="radio" name="interval" value="15"> 15 s (about 7 s of silence between clips)</label>
+  <label><input type="radio" name="interval" value="60" checked> 60 s (about 50 s of silence, a guide who goes quiet)</label>
+  <label><input type="radio" name="interval" value="120"> 2 min (about 110 s of silence)</label>
+  <button id="start" disabled>Start</button>
+  <p class="note">Each clip is about 8 s of numbered Cantonese. Listen to the first one or two,
+  then lock the phone with the side button for about 3 minutes (with 60 s; about 5 minutes with
+  2 min), with earphones in or the speaker on. Note the numbers you hear, unlock, and tap Stop.
+  A Safari tab or the Home Screen icon both work (Share → Add to Home Screen, keep "Open as Web
+  App" on).</p>
+</div>
+<div id="running" hidden>
+  <div id="summary"></div>
+  <button id="stop" class="stop">Stop</button>
+</div>
+<table><tbody id="log"></tbody></table>
+
+<p class="note"><a href="#" onclick="probe.forget(); return false;">Use a different token</a></p>
+
+<script src="/static/token.js"></script>
+<script>
+const api = probe.api;
+const $ = (id) => document.getElementById(id);
+probe.start(() => { $("start").disabled = false; });
+
+const standalone = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+const context = standalone ? "home-screen" : "safari-tab";
+$("context").textContent = standalone ? "Home Screen app" : "Safari tab";
+
+const session = Math.random().toString(36).slice(2, 8);
+let mode = "";
+let interval = "";
+let running = false;
+let hiddenSince = null;          // when the screen was locked / page hidden
+let hiddenAudioTime = 0;         // radio: audio position when the page was hidden
+const stats = { received: 0, played: 0, receivedHidden: 0, playedHidden: 0 };
+
+function report(type, n = null, detail = null) {
+  const at = Date.now();
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td>${new Date(at).toLocaleTimeString()}</td><td></td><td>${n ?? ""}</td><td></td>`;
+  tr.children[1].textContent = type;
+  tr.children[3].textContent = detail ?? "";
+  $("log").prepend(tr);
+  fetch(api("/api/locktest/event"), {
+    method: "POST", keepalive: true,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session, mode, context, type, n, at, detail }),
+  }).catch(() => {});
+}
+
+function showSummary() {
+  if (mode === "radio") {
+    $("summary").textContent = `Radio playing: ${player.paused ? "no" : "yes"} · position ${player.currentTime.toFixed(0)} s`;
+  } else {
+    $("summary").textContent =
+      `Clips received ${stats.received}, played ${stats.played}. ` +
+      `While locked: received ${stats.receivedHidden}, played ${stats.playedHidden}.`;
+  }
+}
+
+// --- players ---------------------------------------------------------------------------
+
+const player = new Audio();      // reused, so the start tap's unlock carries over
+const keeper = new Audio();      // two-player keep-alive: loops silence the whole time
+let audioCtx = null;
+
+// One second of digital silence as a WAV, made on the phone: every sample is zero.
+const silenceUrl = (() => {
+  const rate = 8000, samples = rate, buf = new ArrayBuffer(44 + samples * 2), v = new DataView(buf);
+  const text = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  text(0, "RIFF"); v.setUint32(4, 36 + samples * 2, true); text(8, "WAVEfmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true); text(36, "data"); v.setUint32(40, samples * 2, true);
+  return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+})();
+
+function loopSilence(el) {
+  el.loop = true;
+  el.src = silenceUrl;
+  return el.play().catch((e) => report("keepalive_failed", null, e.name));
+}
+const queue = [];
+let playing = false;
+
+function playNext() {
+  if (playing || !queue.length || !running) return;
+  const { n, buf } = queue.shift();
+  playing = true;
+  const done = (type, detail) => {
+    playing = false;
+    if (type === "played") {
+      stats.played++;
+      if (document.hidden) stats.playedHidden++;
+    }
+    report(type, n, detail);
+    showSummary();
+    playNext();
+    if (!playing && running && mode === "keepalive-one") loopSilence(player);
+  };
+  report("play_start", n, document.hidden ? "hidden" : "visible");
+  if (mode === "clips-webaudio") {
+    audioCtx.decodeAudioData(buf.slice(0)).then((decoded) => {
+      const source = audioCtx.createBufferSource();
+      source.buffer = decoded;
+      source.connect(audioCtx.destination);
+      source.onended = () => done("played");
+      source.start();
+    }, (e) => done("play_failed", String(e)));
+  } else {
+    player.loop = false;
+    player.onended = () => done("played");
+    player.src = URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" }));
+    player.play().catch((e) => done("play_failed", e.name));
+  }
+}
+
+// --- clips over WebSocket ----------------------------------------------------------------
+
+let ws = null;
+let pendingN = null;
+
+function connect() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${proto}//${location.host}${api(`/ws/locktest?session=${session}&interval=${interval}`)}`);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => report("ws_open");
+  ws.onmessage = (e) => {
+    if (typeof e.data === "string") { pendingN = JSON.parse(e.data).n; return; }
+    stats.received++;
+    if (document.hidden) stats.receivedHidden++;
+    report("received", pendingN, document.hidden ? "hidden" : "visible");
+    queue.push({ n: pendingN, buf: e.data });
+    showSummary();
+    playNext();
+  };
+  ws.onclose = (e) => {
+    report("ws_closed", null, `code ${e.code}`);
+    if (running) setTimeout(connect, 2000);   // the app reconnects too
+  };
+}
+
+// --- start / stop --------------------------------------------------------------------------
+
+const ticker = { id: null };
+
+$("start").onclick = async () => {
+  mode = document.querySelector("input[name=mode]:checked").value;
+  interval = document.querySelector("input[name=interval]:checked").value;
+  running = true;
+  $("setup").hidden = true;
+  $("running").hidden = false;
+  if ("mediaSession" in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({ title: "鎖屏測試", artist: "Chongqing translator" });
+  }
+  report("start", null, `${context}, a clip every ${interval} s, ${navigator.userAgent}`);
+  if (mode === "radio") {
+    for (const ev of ["playing", "pause", "waiting", "stalled", "ended", "error"]) {
+      player.addEventListener(ev, () => report("radio_" + ev, null, player.currentTime.toFixed(1)));
+    }
+    player.src = api(`/api/radio?session=${session}&interval=${interval}`);
+    player.play().catch((e) => report("play_failed", null, e.name));
+  } else {
+    if (mode === "clips-webaudio") {
+      audioCtx = new AudioContext();
+      await audioCtx.resume();
+      audioCtx.onstatechange = () => report("audiocontext_" + audioCtx.state);
+    } else if (mode === "keepalive-one") {
+      await loopSilence(player);   // this tap starts the silence; clips take turns with it
+    } else {
+      // Unlock the audio element with this tap.
+      player.src = api("/api/silence.mp3");
+      await player.play().catch((e) => report("unlock_failed", null, e.name));
+      if (mode === "keepalive-two") {
+        keeper.addEventListener("pause", () => { if (running) report("keepalive_paused"); });
+        await loopSilence(keeper);
+      }
+    }
+    connect();
+  }
+  // A timer tick every 5 s: gaps in the log show when the phone stopped running the page.
+  ticker.id = setInterval(() => {
+    report("tick", null, mode === "radio" ? `position ${player.currentTime.toFixed(1)}` : null);
+    showSummary();
+  }, 5000);
+  showSummary();
+};
+
+$("stop").onclick = () => {
+  running = false;
+  clearInterval(ticker.id);
+  if (ws) ws.close();
+  player.pause();
+  player.removeAttribute("src");
+  player.load();   // without this Safari keeps the radio download open
+  keeper.pause();
+  if (audioCtx) audioCtx.close();
+  report("stop");
+  $("stop").disabled = true;
+};
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    hiddenSince = Date.now();
+    hiddenAudioTime = player.currentTime;
+    report("hidden");
+  } else {
+    // Radio: if the audio position moved as far as the clock while hidden, it kept playing.
+    const wall = (Date.now() - (hiddenSince ?? Date.now())) / 1000;
+    const audioMoved = mode === "radio" ? player.currentTime - hiddenAudioTime : null;
+    report("visible", null, mode === "radio"
+      ? `hidden ${wall.toFixed(0)} s, audio moved ${audioMoved.toFixed(0)} s`
+      : `hidden ${wall.toFixed(0)} s`);
+    showSummary();
+  }
+});
+</script>
+</body>
+</html>

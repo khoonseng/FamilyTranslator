@@ -54,6 +54,19 @@ blind_test:
   speed_round: {sentences: [draft-05, draft-06, draft-07], speaking_rate: 1.2,
                 text_from: gemini-minimal-t0.2}
 
+# Step 6: the Cloud Run test service (probe/). Google providers only, so it needs no API keys.
+probe:
+  translator: gemini-minimal-t0.2   # an llm.configs entry: the decided Gemini setting
+  voice: yue-HK-Chirp3-HD-Despina   # the decided voice
+  # /latency streams this sentence to Chirp 3 at real-time pace. It is synthesised once with a
+  # Mandarin voice, so no recording goes into the container.
+  sample_voice: cmn-CN-Chirp3-HD-Charon
+  sample_text: 洪崖洞晚上七点半以后开灯，那个时候人特别多，大家一定要跟紧我，不要走散了。
+  # /locktest: a numbered Cantonese clip every interval_s, so you can hear which ones played.
+  locktest_interval_s: 15
+  locktest_text: 第{n}段。呢段係鎖屏測試，聽到就代表鎖咗屏都仲有聲。
+  locktest_max_minutes: 30          # a stream or socket ends after this, so none runs forever
+
 mt:
   google:
     # Cloud Translation v3. Glossaries are regional, so use a region, not `global`.

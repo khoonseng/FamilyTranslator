@@ -6,6 +6,7 @@ which is close enough to cut guide videos and voice memos into hub-like chunks."
 import io
 import wave
 from pathlib import Path
+from typing import BinaryIO
 
 import av
 import numpy as np
@@ -13,11 +14,12 @@ import numpy as np
 RATE = 16_000
 
 
-def decode(path: str | Path, rate: int = RATE) -> np.ndarray:
-    """Decode any audio/video file (m4a, mp4, mp3, wav...) to mono int16 PCM at `rate`."""
+def decode(path: str | Path | BinaryIO, rate: int = RATE) -> np.ndarray:
+    """Decode any audio/video file (m4a, mp4, mp3, wav...) to mono int16 PCM at `rate`.
+    `path` may also be an open file, e.g. io.BytesIO(mp3_bytes)."""
     resampler = av.AudioResampler(format="s16", layout="mono", rate=rate)
     parts = []
-    with av.open(str(path)) as container:
+    with av.open(str(path) if isinstance(path, str | Path) else path) as container:
         stream = container.streams.audio[0]
         for frame in container.decode(stream):
             parts.extend(f.to_ndarray().reshape(-1) for f in resampler.resample(frame))
@@ -101,6 +103,35 @@ def normalize(pcm: np.ndarray, target_dbfs: float = -20.0, max_gain_db: float = 
     peak = np.abs(samples).max()
     gain = min(10 ** (gain_db / 20), 32767 / peak)  # never clip
     return np.round(samples * gain).astype(np.int16)
+
+
+class Mp3Encoder:
+    """Continuous MP3 encoder: feed PCM in pieces, get MP3 frames back. One encoder per stream,
+    so a never-ending stream ("radio mode") stays one valid MP3."""
+
+    def __init__(self, rate: int, bit_rate: int = 48_000):
+        self.rate = rate
+        self.ctx = av.CodecContext.create("libmp3lame", "w")
+        self.ctx.sample_rate = rate
+        self.ctx.layout = "mono"
+        self.ctx.format = "s16p"
+        self.ctx.bit_rate = bit_rate
+        self.ctx.open()
+
+    def encode(self, pcm: np.ndarray) -> bytes:
+        frame = av.AudioFrame.from_ndarray(
+            pcm.astype(np.int16).reshape(1, -1), format="s16p", layout="mono"
+        )
+        frame.sample_rate = self.rate
+        return b"".join(bytes(p) for p in self.ctx.encode(frame))
+
+    def flush(self) -> bytes:
+        return b"".join(bytes(p) for p in self.ctx.encode(None))
+
+
+def mp3_bytes(pcm: np.ndarray, rate: int) -> bytes:
+    encoder = Mp3Encoder(rate)
+    return encoder.encode(pcm) + encoder.flush()
 
 
 def wav_bytes(pcm: np.ndarray, rate: int = RATE) -> bytes:

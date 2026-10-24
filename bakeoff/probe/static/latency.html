@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Latency test</title>
+<style>
+  body { font: 16px/1.4 -apple-system, system-ui, sans-serif; margin: 0 16px 32px; }
+  h1 { font-size: 22px; }
+  button { font-size: 20px; padding: 14px 20px; border-radius: 10px; border: 0;
+           background: #1a73e8; color: #fff; width: 100%; }
+  button:disabled { background: #999; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 16px; }
+  th, td { padding: 4px 3px; text-align: right; border-bottom: 1px solid #ddd; }
+  th:first-child, td:first-child { text-align: left; }
+  tr.summary td { font-weight: 600; }
+  .note { color: #555; font-size: 14px; }
+  .err { color: #c00; }
+  #text { margin-top: 12px; font-size: 18px; }
+  .token input { font-size: 18px; padding: 10px; width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+  .token { margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<h1>Time-to-first-audio</h1>
+<p class="note">Turn Wi-Fi off and use mobile data. Each run takes about 10 s: the phone checks
+its network, then Cloud Run streams a stored Mandarin sentence to Chirp 3 at speaking pace,
+translates it and synthesises the Cantonese, and the phone downloads and plays the clip.</p>
+<p>Your IP: <b id="ip">…</b> · <span id="network"></span></p>
+<div id="tokenBox" class="token" hidden>
+  <p>Enter the probe token (<code>PROBE_TOKEN</code> in <code>bakeoff/.env</code>). This phone
+  remembers it.</p>
+  <input id="tokenInput" type="password" autocomplete="off" autocapitalize="off" placeholder="Probe token">
+  <button id="tokenSave">Save</button>
+  <p id="tokenMsg" class="err"></p>
+</div>
+<button id="go" disabled>Run 10 tests</button>
+<p id="status" class="note"></p>
+<table>
+  <thead><tr>
+    <th>#</th><th>Round trip</th><th>Upload KB/s</th><th>STT</th><th>Translate</th>
+    <th>TTS</th><th>MP3 down</th><th>Est. total</th>
+  </tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<p class="note">All in seconds. <b>STT</b>: end of speech to Chirp 3's final transcript.
+<b>Translate</b>: until the Cantonese text is complete. <b>Est. total</b> = STT + Translate + TTS
++ MP3 download: in the app the last audio goes up as half a round trip and the clip comes back
+pushed, which together come to about one download. The live hub needs about 32 KB/s upload.
+Target: 2–4 s.</p>
+<div id="text"></div>
+
+<p class="note"><a href="#" onclick="probe.forget(); return false;">Use a different token</a></p>
+
+<script src="/static/token.js"></script>
+<script>
+const api = probe.api;
+const $ = (id) => document.getElementById(id);
+probe.start(() => { $("go").disabled = false; });
+const player = new Audio();
+const results = [];
+
+function networkType() {
+  const c = navigator.connection;
+  return c ? `${c.effectiveType || ""} ${c.type || ""}`.trim() : "";
+}
+$("network").textContent = networkType();
+
+async function timed(fn) {
+  const t0 = performance.now();
+  const value = await fn();
+  return [value, (performance.now() - t0) / 1000];
+}
+const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor((s.length - 1) / 2)]; };
+const p90 = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.ceil(0.9 * s.length) - 1]; };
+const fmt = (x, d = 2) => (x == null || Number.isNaN(x) ? "–" : x.toFixed(d));
+
+function uploadBody() {
+  // 5 s of 16 kHz 16-bit PCM = 160,000 bytes; random so nothing can compress it.
+  const body = new Uint8Array(160000);
+  for (let i = 0; i < body.length; i += 65536) crypto.getRandomValues(body.subarray(i, i + 65536));
+  return body;
+}
+
+async function oneRun(i) {
+  const r = { i };
+  const rtts = [];
+  for (let k = 0; k < 5; k++) {
+    const [ping, s] = await timed(() => fetch(api("/api/ping"), { cache: "no-store" }).then((x) => x.json()));
+    rtts.push(s);
+    $("ip").textContent = ping.ip;
+  }
+  r.rtt_s = median(rtts);
+  const [, up] = await timed(() => fetch(api("/api/upload"), { method: "POST", body: uploadBody() }).then((x) => x.json()));
+  r.upload_s = up;
+  r.upload_kb_s = 160 / up;
+
+  $("status").textContent = `Run ${i}: Cloud Run is streaming the sample…`;
+  const server = await fetch(api("/api/latency/run"), { method: "POST" }).then((x) => x.json());
+  Object.assign(r, server);
+  if (!server.error) {
+    const [blob, down] = await timed(() => fetch(api("/api/clip/" + server.run_id), { cache: "no-store" }).then((x) => x.blob()));
+    r.download_s = down;
+    r.total_s = server.server_s + down;
+    player.src = URL.createObjectURL(blob);
+    player.play().catch(() => {});
+    $("text").textContent = `${server.transcript} → ${server.yue}`;
+  }
+  fetch(api("/api/latency/client"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_id: r.run_id, rtt_s: r.rtt_s, upload_s: r.upload_s, upload_kb_s: r.upload_kb_s,
+                           download_s: r.download_s, total_s: r.total_s, network: networkType() }),
+  }).catch(() => {});
+  return r;
+}
+
+function row(cells, cls) {
+  const tr = document.createElement("tr");
+  if (cls) tr.className = cls;
+  tr.innerHTML = cells.map((c) => `<td>${c}</td>`).join("");
+  $("rows").appendChild(tr);
+}
+
+function showRun(r) {
+  if (r.error) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r.i}</td><td>${fmt(r.rtt_s)}</td><td>${fmt(r.upload_kb_s, 0)}</td>` +
+                   `<td colspan="5" class="err" style="text-align:left"></td>`;
+    tr.lastChild.textContent = r.error;
+    $("rows").appendChild(tr);
+    return;
+  }
+  row([r.i, fmt(r.rtt_s), fmt(r.upload_kb_s, 0), fmt(r.stt_s), fmt(r.llm_yue_s), fmt(r.tts_s), fmt(r.download_s), fmt(r.total_s)]);
+}
+
+function showSummary() {
+  const ok = results.filter((r) => !r.error);
+  if (!ok.length) return;
+  const col = (k) => ok.map((r) => r[k]).filter((x) => x != null);
+  for (const [label, f] of [["median", median], ["p90", p90]]) {
+    row([label, fmt(f(col("rtt_s"))), fmt(f(col("upload_kb_s")), 0), fmt(f(col("stt_s"))),
+         fmt(f(col("llm_yue_s"))), fmt(f(col("tts_s"))), fmt(f(col("download_s"))), fmt(f(col("total_s")))], "summary");
+  }
+}
+
+$("go").onclick = async () => {
+  $("go").disabled = true;
+  // Unlock audio on iOS with this tap, so each run's clip can play.
+  player.src = api("/api/silence.mp3");
+  player.play().catch(() => {});
+  $("rows").innerHTML = "";
+  results.length = 0;
+  for (let i = 1; i <= 10; i++) {
+    $("status").textContent = `Run ${i} of 10…`;
+    try {
+      const r = await oneRun(i);
+      results.push(r);
+      showRun(r);
+    } catch (e) {
+      const r = { i, error: String(e) };
+      results.push(r);
+      showRun(r);
+    }
+  }
+  showSummary();
+  $("status").textContent = "Done. Results are also saved on the server.";
+  $("go").disabled = false;
+};
+</script>
+</body>
+</html>

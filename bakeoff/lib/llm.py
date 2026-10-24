@@ -4,6 +4,7 @@ Vertex AI authenticates with a short-lived Google access token (service account 
 refreshed before it expires; Groq uses an API key from the environment."""
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import perf_counter
 
@@ -62,7 +63,13 @@ class ChatClient:
             raise RuntimeError(f"{self._auth} is not set (bakeoff/.env)")
         return self._client
 
-    def chat(self, messages: list[dict], stream: bool = True) -> ChatResult:
+    def chat(
+        self,
+        messages: list[dict],
+        stream: bool = True,
+        on_text: Callable[[str], None] | None = None,
+    ) -> ChatResult:
+        """on_text (streaming only) is called with the text so far after every piece."""
         kwargs = {"model": self.model, "messages": messages, "extra_body": self.params}
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
@@ -92,6 +99,8 @@ class ChatClient:
                     if first is None:
                         first = perf_counter() - start
                     parts.append(choice.delta.content)
+                    if on_text:
+                        on_text("".join(parts))
         return ChatResult(
             text="".join(parts), ttft_s=first, total_s=perf_counter() - start, usage=usage
         )
