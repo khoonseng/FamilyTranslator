@@ -36,7 +36,8 @@ Only two audio channels exist: Cantonese (listeners) and Mandarin (hub speaker).
 
 1. Hub = a spare phone the guide carries on a lanyard, with its own eSIM or SIM; the owner's
    phone is the fallback hub. **Guide** latches into continuous listening; client-side VAD splits
-   speech at pauses. **Family** (phase 2) is tapped for replies, then back to Guide.
+   speech at pauses. Family replies (phase 2) come from family phones with the hub PIN
+   (push-to-talk or typing); **Family** on the hub stays as an option.
 2. The hub streams audio; Cloud Run keeps one Chirp 3 streaming session in the language set by
    the mode, with `gpt-transcribe` filling any gaps (hard rule 9).
 3. ONE translation LLM call per sentence returns JSON with the target languages only (`yue`, `en`
@@ -55,15 +56,17 @@ Room and hub:
 Build order:
 - **Phase 1 (trip-critical):** guide → family. Mandarin speech or hub typing in; Cantonese audio
   and text out. English text next, if time permits.
-- **Phase 2:** family → guide. Family mode (Cantonese or English), Mandarin audio from the hub,
-  half-duplex, typing on listener phones. Built only after phase 1 passes its field test; if it
-  slips, the owner and wife interpret replies.
+- **Phase 2:** family → guide. Family members talk (push-to-talk, Cantonese or English) or type
+  on their own phones (hub PIN required); the hub plays the Mandarin once the guide is quiet.
+  The guide always has priority (hard rules 8 and 13). Built only after phase 1 passes its
+  field test; if it slips, the owner and wife interpret replies.
 
 ## Hard rules (do not break without explicit approval)
 
 1. Provider API keys live server-side only (Secret Manager). Phones never call AI providers directly.
-   Only a phone that has entered the hub PIN may send audio or text that triggers provider calls;
-   listeners join with the QR room token and never need the PIN.
+   Only a phone that has entered the hub PIN may send audio or text that triggers provider calls:
+   the hub, and in phase 2 family phones that talk or type replies. Phones that only listen join
+   with the QR room token and never need the PIN.
 2. Cloud Run runs in `us-central1` with `max-instances=1` (room state lives in memory) and
    `--cpu 1`. Never go below 1 vCPU: Cloud Run then forces max concurrency to 1, which allows only
    one WebSocket. Keep concurrency high enough for every phone in the room (the default 80 is
@@ -98,12 +101,17 @@ Build order:
      fail over to the other provider at once, never wait and retry.
 7. All provider calls are stateless. Translation context = glossary + last 2–3 utterances, never
    the whole session.
-8. Input language comes from the hub mode (Guide / Family). Never auto-detect Mandarin vs
-   Cantonese to choose the pipeline.
+8. Input language comes from the hub mode (Guide / Family) or, in phase 2, the Talk button on a
+   family phone, which is always family speech. Never auto-detect Mandarin vs Cantonese to choose
+   the pipeline.
    - Guide is a latch: one tap = continuous listening until Family is tapped or Guide is tapped off.
      A VAD pause ends a chunk, never the session.
    - Family is one mode for Cantonese and English: STT receives `yue-Hant-HK` and `en-US`. Both go
      through the same pipeline, so this is not routing.
+   - Talk on a family phone (phase 2) is push-to-talk, never an open mic, capped at about 30 s.
+     The guide has priority: Talk starts only after the guide has been quiet for 2 s (the hub
+     reports guide speech from its VAD), and nothing a family member does blocks the guide's
+     capture. Typing works any time; replies and guide sentences show in order of arrival.
    - Typed text (hub or listener) may be language-detected; this rule covers speech only.
    - In Guide mode, a three-layer junk filter drops speech that isn't the guide before translation.
      It is a filter, never a router: (1) the mic sits close to the guide (spare hub phone or
@@ -151,9 +159,17 @@ Build order:
       marked, so they can be replayed later.
 12. Mobile web constraints: HTTPS only; tap-to-start screen on join (unlocks iOS audio); Screen
     Wake Lock while in a room; reconnect + backfill from the last utterance id.
+    - Silent keep-alive on listener phones: while in a room, a second audio element loops
+      phone-made digital silence, because iOS freezes a locked page (and its WebSocket) about
+      10 s after its audio stops. Clips still play on the main player. Restart the keep-alive if
+      iOS pauses it, else show "Tap to resume audio"; pause it while Talk records; never run it
+      on the hub (hard rule 13). No radio mode (tested: about 6 s more delay).
 13. Half-duplex capture: any phone with an open mic (always the hub) pauses capture while it
     plays audio and resumes when playback ends, so it never re-captures its own output. Open the
     mic with `echoCancellation: true` as a second layer only. (Traverba looped forever without this.)
+    Because of this, the hub plays Mandarin replies (phase 2) only after the guide has been quiet
+    for 2 s, in order of arrival, and a tap on the hub screen stops a reply and reopens the mic.
+    A family phone pauses its own playback while Talk records.
 14. Zero data retention (ZDR) at every provider. No provider may keep conversation data, except
     the two Google exceptions below:
     - Google STT: sync (or streaming) requests only. Never call the async/batch endpoint and never
@@ -419,3 +435,15 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
 - 2026-10-24 — Translation prompt rules for live speech (false starts, word swaps such as
   第二天 → 第二日 without changing the day or time, no repeats) adopted after runs 4–5: Gemini's
   Mandarin-word slips fell from 15 to 0 on 21 real sentences.
+- 2026-10-24 — Family replies (phase 2) come from the family's own phones (owner decision):
+  push-to-talk (Cantonese or English) or typing, on phones that have entered the hub PIN (hard
+  rule 1; about 3 phones in the private vehicle); phones without it listen only. The guide
+  always has priority: Talk starts only after 2 s of guide silence, and the hub plays Mandarin
+  replies only after 2 s of guide silence, with a tap to stop one (hard rules 8 and 13). Typing
+  works any time; everything shows in order of arrival. The hub's Family button stays optional.
+- 2026-10-24 — Locked-screen playback: listener phones run a silent keep-alive (a second audio
+  element looping phone-made silence) while in a room (owner decision; hard rule 12). Week-1
+  probe on an iPhone: plain clips over WebSocket stopped about 10 s after the audio ended once
+  locked (Safari tab and Home Screen alike), Web Audio failed at once; radio mode kept playing
+  but added about 6 s of buffering; the two-player keep-alive played every clip on schedule
+  after about 50 s of silence, with no added delay, in Safari and from the Home Screen.

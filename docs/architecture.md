@@ -25,7 +25,7 @@ Only two of the seven adults speak Mandarin. The app removes the need for them t
 **Build order**
 
 - **Phase 1 (trip-critical): guide → family.** Mandarin speech, or Mandarin typed on the hub, becomes Cantonese audio and large-font Cantonese text on every listener phone. English text follows if time permits.
-- **Phase 2: family → guide.** Family mode (Cantonese or English), Mandarin audio from the hub speaker, half-duplex capture, and typing on listener phones. It starts only after phase 1 passes its field test. If it slips past the trip, Khoon Seng and his wife interpret replies, as they would anyway.
+- **Phase 2: family → guide.** Family members talk (push-to-talk, Cantonese or English) or type on their own phones, if those phones have the hub PIN, and the hub plays the Mandarin once the guide is quiet. The guide always has priority (see "Family replies"). It starts only after phase 1 passes its field test. If it slips past the trip, Khoon Seng and his wife interpret replies, as they would anyway.
 
 **Success criteria**
 
@@ -45,7 +45,7 @@ The app needs only two audio channels, Cantonese and Mandarin, plus text in thre
 | Wife's siblings | Cantonese, English | Cantonese (must-have) | Cantonese or English | Own phone + earphones |
 | Khoon Seng and wife | Mandarin, English, Cantonese | None needed | Optional | Operate the hub; human fallback |
 
-Input language is chosen explicitly on the hub with **Guide** and **Family** talk buttons, because auto-detecting Mandarin versus Cantonese on short clips is unreliable. Family input can be Cantonese or English in a single Family mode: speech-to-text receives both `yue-Hant-HK` and `en-US`, and both go through the same pipeline. Typed text may be language-detected; the explicit-mode rule covers speech only.
+Input language is chosen explicitly, because auto-detecting Mandarin versus Cantonese on short clips is unreliable: on the hub with **Guide** and **Family** talk buttons, and in phase 2 by the **Talk** button on listener phones, which is always family speech. Family input can be Cantonese or English in a single Family mode: speech-to-text receives both `yue-Hant-HK` and `en-US`, and both go through the same pipeline. Typed text may be language-detected; the explicit-mode rule covers speech only.
 
 All family phones are iPhones (iPhone 14 Pro or later, iOS 26.6.2 or later), so every phone-side decision is made for iOS Safari first.
 
@@ -60,7 +60,7 @@ Why not Khoon Seng's phone: on iOS, Safari stops the mic as soon as he switches 
 **Modes**
 
 - **Guide** is a latch: one tap starts continuous listening, and voice-activity detection (Silero VAD) splits the guide's speech at short pauses (about 0.6–0.8 s), with each chunk capped at 15 seconds. A pause ends a chunk, never the listening session.
-- To let family speak (phase 2), tap **Family**; tap **Guide** again to return. The whole screen is tinted a different colour per mode so the current one is unmistakable.
+- Family replies come mainly from the family's own phones (phase 2, see "Family replies"). **Family** on the hub stays as an option for when Khoon Seng or his wife speak next to the guide; tap **Guide** again to return. The whole screen is tinted a different colour per mode so the current one is unmistakable.
 - The hub also takes typed Mandarin, which skips speech-to-text.
 
 **Junk filter (Guide mode)**
@@ -80,7 +80,7 @@ Chirp 3 returns no usable confidence score, so confidence is not part of the fil
 
 **Hub phone rules**
 
-- **Half-duplex:** the hub pauses mic capture while it plays any audio and resumes when playback ends, so it never hears its own Mandarin output as the guide speaking. Browser echo cancellation (`echoCancellation: true`) stays on as a second layer, not as the main defence.
+- **Half-duplex:** the hub pauses mic capture while it plays any audio and resumes when playback ends, so it never hears its own Mandarin output as the guide speaking. Browser echo cancellation (`echoCancellation: true`) stays on as a second layer, not as the main defence. Because the mic is muted while a reply plays, replies wait until the guide is quiet, and the guide can tap the screen to stop one (see "Family replies").
 - No Bluetooth earbuds connected to the hub phone; the phone may silently switch to their mic.
 - Bring a car charger and power bank: continuous mic, screen wake lock and roaming data drain the battery fast.
 
@@ -92,8 +92,46 @@ Decided at the weeks 6–7 field test by comparing transcripts: the spare hub ph
 
 - **Benefit:** the mic sits at the guide's mouth rather than about 1 m away, which should improve STT in noisy places, strengthens the junk filter and may remove the need for a clip-on mic.
 - **Hub behaviour:** stays latched in Guide mode; the guide never switches modes. In phase 2, Mandarin replies play from its speaker, since the guide wears no earphones.
-- **Family replies move to their own phones (phase 2):** the listener screen gains a hold-to-talk button (Cantonese or English) and a text box, replacing the Family button on the hub.
+- **Family replies move to their own phones (phase 2):** phones with the hub PIN gain a hold-to-talk button (Cantonese or English) and a text box; the hub's Family button stays as an option (see "Family replies").
 - **The phone:** any spare iPhone or Android phone with its own eSIM or physical SIM routed through SG roaming (not Khoon Seng's hotspot). It is locked to the app with Guided Access (iOS) or App Pinning (Android), carries no personal accounts, and comes with a lanyard and a power bank.
+
+## Family replies (phase 2, decided 24 Oct)
+
+Family members reply from their own phones, by talking or typing; the hub on the guide's lanyard plays the Mandarin. The guide always has priority: a family member can never cut off or block the guide's speech.
+
+**Who can reply**
+
+- Only phones that have entered the hub PIN show the **Talk** button and the text box, since both trigger paid provider calls (hard rule 1). Phones without the PIN listen only.
+- In the private vehicle that is likely about 3 phones, so entering the PIN once at the start of the trip is a small cost. The phone remembers it, also after the app is closed.
+- If Khoon Seng has a spare phone of his own, he is simply one of the listeners.
+
+**Talking: push-to-talk, after the guide pauses**
+
+- **Push-to-talk:** hold **Talk** while speaking, Cantonese or English (speech-to-text receives `yue-Hant-HK` and `en-US`). It is never an open mic, so family chatter never reaches the guide and no junk filter is needed on listener phones. A recording is capped at about 30 s.
+- **The Talk button decides the language:** speech from it always takes the family → guide pipeline, so no language is guessed (hard rule 8).
+- **Guide priority:**
+  - The hub tells the server when the guide is speaking, from its own voice-activity detection.
+  - While the guide speaks, listener phones show "Guide is speaking…" and Talk won't start.
+  - Talk becomes available after the guide has been quiet for **2 s**, the same pause that starts a new bubble, so nobody grabs the short gap between two of the guide's sentences.
+  - Once a family member has started, they can finish even if the guide starts again: the guide is captured by the hub, so nothing of his is lost.
+  - If the guide narrates without pausing, Talk keeps waiting and typing is the way in.
+- **Half-duplex on the listener phone:** while Talk records, the phone pauses its own playback (and any locked-screen keep-alive) and resumes afterwards (hard rule 13).
+
+**Typing**
+
+- Typing works at any time, whether or not the guide is talking.
+- Typed and spoken replies and the guide's sentences appear on every screen in order of arrival, each as its own bubble.
+
+**Mandarin replies on the hub**
+
+- The Simplified Chinese text appears on the hub at once.
+- The audio is queued and plays only after the guide has been quiet for 2 s, because the hub's mic is muted while it plays (hard rule 13). Replies play in order of arrival.
+- The guide can tap the hub screen to stop a reply; the mic reopens at once.
+
+**To test when phase 2 starts**
+
+- Whether iOS asks for microphone permission again in each session of a Home Screen app.
+- Whether opening the mic switches iPhone audio to call routing (quieter, through the earpiece), and whether it switches back afterwards.
 
 ## System architecture
 
@@ -109,7 +147,7 @@ Mermaid version, for the Markdown copy in the repo:
 flowchart LR
   subgraph CQ["In Chongqing, on SG roaming"]
     HUB["Hub phone<br/>Guide / Family modes<br/>Mic in, Mandarin audio out<br/>Simplified Chinese on screen"]
-    LIS["Listener phones (5)<br/>Cantonese audio, earphones<br/>Large-font Cantonese text<br/>Clip cache for replay"]
+    LIS["Listener phones (5)<br/>Cantonese audio, earphones<br/>Large-font Cantonese text<br/>Clip cache for replay<br/>Phase 2: Talk and type (PIN)"]
   end
   subgraph GCP["GCP, one region: Cloud Run service"]
     ROOM["Room manager<br/>QR join, language channels<br/>Reconnect and backfill"]
@@ -144,7 +182,7 @@ Mermaid version, for the Markdown copy in the repo:
 
 ```mermaid
 flowchart TD
-  CAP["Capture speech or typed text<br/>Guide latch or Family, plus VAD"] --> STT["Speech to text<br/>Language set by mode<br/>Junk filter in Guide mode"]
+  CAP["Capture speech or typed text<br/>Guide latch or Family, plus VAD<br/>Phase 2: listener Talk"] --> STT["Speech to text<br/>Language set by mode<br/>Junk filter in Guide mode"]
   STT --> TR["Translate once<br/>One LLM call: target languages only<br/>Guide: yue, en · Family: zh_hans, yue/en"]
   TR --> TXT["Text to every screen<br/>Transcript plus translations"]
   TR --> WHO{"Who spoke?"}
@@ -316,7 +354,7 @@ The only risk is a fast guide talking for minutes without pausing, where clips c
 **Bubbles**
 
 - Each bubble groups up to 6 sentences; each sentence inside it is its own audio clip.
-- Listeners can type replies on their own phones (phase 2).
+- Phones with the hub PIN can talk or type replies (phase 2, see "Family replies").
 - Tap a bubble to replay the whole turn; tap a sentence to replay just that sentence.
 - The guide's original Mandarin shows in small text under each bubble, so Khoon Seng or his wife can check a confusing translation on the spot.
 - Unplayed bubbles carry a visible marker, like unheard voice notes.
@@ -347,6 +385,17 @@ stateDiagram-v2
 - In Live, when 3 or more clips are waiting, **跳到最新 / Jump to latest** skips to the newest clip; skipped clips stay unplayed (see "Keeping up with fast speech").
 - Replays never re-call TTS: clips are cached on the phone (IndexedDB) and backed by Cloud Storage, so a replay works even in a tunnel.
 - Each phone shows a tap-to-start screen on joining, which unlocks audio on iOS, and holds a screen Wake Lock while in a room.
+
+**Locked screen: silent keep-alive (decided 24 Oct)**
+
+Listeners can lock the phone or put it in a pocket and still hear every clip.
+
+- **The problem** (week-1 test on an iPhone, in a Safari tab and as a Home Screen app alike): iOS freezes a locked page about 10 s after its audio stops, and its WebSocket dies with it, so the next clip never arrives. Clips 7 s apart survived; clips 50 s apart did not. Web Audio failed at once.
+- **The fix:** while in a room, a second audio element loops one second of digital silence that the phone makes itself: every sample is zero, so there is nothing to hear and no network traffic. iOS counts it as playing audio and keeps the page running. Clips play on the main player as before, so the player states and rules are unchanged. In the test, clips arrived and played on schedule after about 50 s of silence, with no added delay, in a Safari tab and from the Home Screen.
+- **Rejected: "radio mode"**, one continuous MP3 stream per listener. It also kept playing when locked, but Safari's buffering added about 6 s of delay, and the server couldn't tell when a phone had stopped listening (streams ran on for 30 minutes after Stop).
+- **If iOS pauses the keep-alive** (seen once, from the lock-screen controls or as the phone woke), the app restarts it; if that fails, it shows "Tap to resume audio".
+- **Never on the hub,** whose screen stays on and whose mic must not be muted by endless playback (hard rule 13). On a family phone it pauses while Talk records (phase 2).
+- **To check in the weeks 6–7 field tests:** battery drain over a full day, and locks of an hour or more.
 
 ## Hosting, networking and China access
 
@@ -387,7 +436,7 @@ The roaming SIM, not the cloud region, is what keeps the app reachable in Chongq
 
 - There is a single fixed room. Listeners scan its QR code once, pick their language and stay joined.
 - Exactly one phone is the active hub at a time; two hubs would capture the guide twice and duplicate bubbles.
-- **Hub PIN:** a short code entered once on any phone allowed to act as hub; the phone remembers it. Listeners never need it.
+- **Hub PIN:** a short code entered once on any phone allowed to act as hub or, in phase 2, to talk or type replies; the phone remembers it. Phones that only listen never need it.
 - **Become hub:** if the hub's battery dies or it drops off, any phone with the PIN (Khoon Seng's, his wife's, a replacement) taps **Become hub**. The server moves the hub role to that phone, and bubble history carries on unbroken. If the old hub comes back, it shows "Another phone is the hub" and works as a listener until someone takes the role back.
 - **Hub offline:** if the hub is unreachable for more than about 20 seconds, listener phones show a "Hub offline" banner so someone knows to take over.
 
@@ -505,11 +554,11 @@ The biggest risks are audio capture and Cantonese quality, not hosting.
 | Bluetooth earbuds connected to the hub | Phone silently switches to the earbud mic | Keep the hub phone free of Bluetooth audio devices |
 | Chongqing-accented or fast Mandarin (the guide is likely to have both) | STT errors | Bake-off on 15–20 real Chongqing guide clips comparing Chirp 3 (sync and streaming), `gpt-4o-transcribe` and `gpt-transcribe`; glossary as phrase biasing; ask the guide for standard Putonghua |
 | Translation slips into formal written Chinese or Mandarin grammar | Cantonese sounds wrong to the in-laws | Colloquial-Cantonese prompt; colloquial-marker check and blind bake-off |
-| iOS audio unlock and screen lock (every family phone is an iPhone) | Listener hears nothing once the screen locks or the phone is pocketed | Tap-to-start on join; Wake Lock API; week-1 test on the family's iPhones. If locked-screen playback fails, a fallback is a "radio mode": one continuous audio stream, which iOS keeps playing with the screen locked |
+| iOS audio unlock and screen lock (every family phone is an iPhone) | Listener hears nothing once the screen locks or the phone is pocketed | Tap-to-start on join; Wake Lock API; a silent keep-alive on listener phones (decided 24 Oct after the week-1 test: without it, iOS froze the locked page about 10 s after audio stopped). Radio mode was tested and rejected (about 6 s more delay) |
 | Tunnels and dead zones | Missed bubbles | Reconnect and backfill from the last utterance id |
 | Vertex AI shared pool refuses Gemini requests (429) | Translations stall if the app waits on Gemini | Immediate per-sentence failover to Groq, never retry on Vertex; seen at ~40% of requests in a 23 Oct bench run |
 | Cantonese TTS still in Preview at Google | Voice outage | Adapter failover to Google's older voices; last resort text plus human interpreting |
-| Mandarin vs Cantonese auto-detection | Wrong pipeline | Explicit Guide and Family modes on the hub |
+| Mandarin vs Cantonese auto-detection | Wrong pipeline | Explicit Guide and Family modes on the hub; the listener Talk button is always family speech |
 | Listener phones playing aloud | Echo and feedback into the hub mic | Earphones for every listener |
 
 ## Build plan
@@ -546,7 +595,7 @@ gantt
 
 ## Open decisions
 
-Six decisions remain. Decided on 24 Oct: Gemini as the primary translator regardless of Google's answers, with Google's abuse-monitoring logging and standard TTS terms accepted; normal-speed playback (1.0×) with a "Jump to latest" button; Chirp 3 streaming as the speech-to-text, with `gpt-transcribe` as safety net and fallback; Gemini as the bake-off winner, Qwen as the Groq model and Cloud Translation as the last-resort fallback; Despina as the Cantonese voice with Standard-A as fallback. Decided on 23 Oct: Chirp 3 streaming as the target design, one OpenAI fallback for speech-to-text, a sentence-level Cantonese-character junk filter, and per-model temperature. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
+Six decisions remain. Decided on 24 Oct: a silent keep-alive on listener phones so clips keep playing with the screen locked; family replies from their own phones in phase 2 (push-to-talk or typing, hub PIN required, the guide always has priority, Mandarin replies wait for the guide to be quiet); Gemini as the primary translator regardless of Google's answers, with Google's abuse-monitoring logging and standard TTS terms accepted; normal-speed playback (1.0×) with a "Jump to latest" button; Chirp 3 streaming as the speech-to-text, with `gpt-transcribe` as safety net and fallback; Gemini as the bake-off winner, Qwen as the Groq model and Cloud Translation as the last-resort fallback; Despina as the Cantonese voice with Standard-A as fallback. Decided on 23 Oct: Chirp 3 streaming as the target design, one OpenAI fallback for speech-to-text, a sentence-level Cantonese-character junk filter, and per-model temperature. Decided on 13 Oct: the guide carries a spare hub phone with its own data line (Khoon Seng's phone as fallback), guide → family is built first, MP3 clips, 30-day storage, the chunk, sentence and bubble rules, trip dates 19–23 Dec, region `us-central1`, one fixed room with PIN-gated hub takeover, a warning-only daily spending alert, and reasoning off on the translation model.
 
 - [ ] Get the spare hub phone and its eSIM or physical SIM; confirm the line routes outside China
 - [ ] Whether the guide will be driving or seated separately (affects phone placement in the car)
