@@ -151,3 +151,37 @@ def test_chinese_number(n, words):
 def test_cer_treats_digits_and_chinese_numerals_alike():
     assert scoring.cer("建议5到6天只玩重庆", "建议五到六天只玩重庆") == 0.0
     assert scoring.cer("大概40分钟", "大概四十分钟") == 0.0
+
+
+MANDARIN_WORDS = ["今天", "明天", "每天", "早上", "晚上", "您", "你們", "他們", "很"]
+
+
+def test_mandarin_words_found_in_cantonese_output():
+    assert scoring.mandarin_words("第三天我哋去武隆，您哋記得帶護照", MANDARIN_WORDS) == [
+        "第三天",
+        "您",
+    ]
+    assert scoring.mandarin_words("建議玩五到六天，今天好熱", MANDARIN_WORDS) == ["六天", "今天"]
+
+
+def test_cantonese_output_has_no_mandarin_words():
+    text = "第三日我哋去武隆，聽日朝早七點喺大堂等，天氣好熱。"
+    assert scoring.mandarin_words(text, MANDARIN_WORDS) == []
+
+
+TIME_WORDS = {
+    "聽日": ["明天", "明日"],
+    "朝早": ["早上", "上午", "早"],
+    "夜晚": ["晚上", "晚", "夜"],
+}
+
+
+def test_added_time_words():
+    # The guide said neither tomorrow nor morning.
+    assert scoring.added_time_words("第二天去武隆", "聽日朝早去武隆", TIME_WORDS) == [
+        "聽日",
+        "朝早",
+    ]
+    # Each time word is justified by the source, in either script.
+    assert scoring.added_time_words("明天早上七點出發", "聽日朝早七點出發", TIME_WORDS) == []
+    assert scoring.added_time_words("洪崖洞晚上七点半", "洪崖洞夜晚七點半", TIME_WORDS) == []

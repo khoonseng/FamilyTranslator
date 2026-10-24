@@ -153,3 +153,14 @@ scoring:
   # Common words that contain a formal marker but are normal in spoken Cantonese too;
   # removed before counting formal markers.
   formal_exceptions: [不過, 不同, 不少, 不錯, 不斷, 不如, 不得了, 目的, 的士, 實在, 存在]
+  # Mandarin words that slipped into Gemini's Cantonese before the run-4/5 prompt rules (第三天,
+  # 您哋 ...). Days counted with 天 (第二天, 三天) are matched in code.
+  mandarin_words: [今天, 明天, 每天, 天天, 早上, 晚上, 您, 你們, 他們, 她們, 這樣, 很]
+  # Cantonese time words, and the Mandarin words in the source that justify each. One found
+  # without its cue is an added time (run 4: Qwen wrote 聽日 and 朝早 the guide never said).
+  time_words:
+    聽日: [明天, 明日, 明早]
+    朝早: [早上, 早晨, 上午, 早]
+    晏晝: [中午, 下午, 午]
+    夜晚: [晚上, 晚, 夜]
+    晚黑: [晚上, 晚, 夜]

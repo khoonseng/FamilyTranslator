@@ -18,7 +18,14 @@ from pathlib import Path
 from lib import config
 from lib.config import OUT
 from lib.records import median, percentile, read_jsonl
-from lib.scoring import colloquial_score, glitches, glossary_hits, simplified_chars
+from lib.scoring import (
+    added_time_words,
+    colloquial_score,
+    glitches,
+    glossary_hits,
+    mandarin_words,
+    simplified_chars,
+)
 
 # Configs retired from config.yaml whose runs predate settings being logged per record.
 RETIRED = {
@@ -76,10 +83,28 @@ def score_config(rows: list[dict], cfg: dict) -> dict:
         for r in rows
         if (g := glitches((r["output"] or {}).get("yue", "")))
     ]
+    # Like glitches, over every repeat: Mandarin words left in, and times the guide never said.
+    sc = cfg["scoring"]
+    slips = [
+        (r["sentence_id"], r["repeat"], w)
+        for r in rows
+        if (w := mandarin_words((r["output"] or {}).get("yue", ""), sc["mandarin_words"]))
+    ]
+    added = [
+        (r["sentence_id"], r["repeat"], w)
+        for r in rows
+        if (
+            w := added_time_words(r["source"], (r["output"] or {}).get("yue", ""), sc["time_words"])
+        )
+    ]
     return {
         "sentences": len(first),
         "glitches": len(glitched),
         "glitch_examples": glitched,
+        "mandarin": len(slips),
+        "mandarin_examples": slips,
+        "added_times": len(added),
+        "added_examples": added,
         "outputs": len(rows),
         "json_ok": sum(r["json_ok"] for r in rows) / len(rows) if rows else None,
         "colloquial": colloquial,
@@ -165,16 +190,21 @@ def main() -> None:
         "Colloquial share = colloquial markers / (colloquial + formal markers) in `yue`.",
         "Formal-leaning = sentences with more formal than colloquial markers.",
         "Glitches = outputs (over all repeats) with English words or runaway repetition.",
+        "Mandarin words = outputs with Mandarin words left in (第三天, 您, 很 ...).",
+        "Added times = outputs with a time word the guide never said (聽日 without 明天 ...).",
+        "Both count over all repeats.",
         "None of these catch wrong meaning: read out/translations_review.md as well.",
         "",
-        "| Config | Sentences | Glitches | Valid JSON | Colloquial share | Formal-leaning "
+        "| Config | Sentences | Glitches | Mandarin words | Added times | Valid JSON "
+        "| Colloquial share | Formal-leaning "
         "| Simplified chars | Glossary yue | Glossary en | First token "
         "| Total (median) | Total (p90) | Reasoning tokens |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "|" + " --- |" * 15,
     ]
     for n, s in scores.items():
         lines.append(
             f"| {n} | {s['sentences']} | {s['glitches']}/{s['outputs']} | "
+            f"{s['mandarin']}/{s['outputs']} | {s['added_times']}/{s['outputs']} | "
             f"{fmt(s['json_ok'], '{:.0%}')} | "
             f"{fmt(s['ratio'], '{:.0%}')} ({s['colloquial']}/{s['formal']}) | "
             f"{s['formal_leaning']} | {s['simplified']} | {s['glossary_yue']} | "
@@ -199,6 +229,14 @@ def main() -> None:
     if examples:
         lines += ["", "## Glitches found", ""]
         lines += [f"- `{n}` {sid} #{rep}: {', '.join(g)[:80]}" for n, sid, rep, g in examples]
+    for title, key in (
+        ("Mandarin words found", "mandarin_examples"),
+        ("Added times found", "added_examples"),
+    ):
+        found = [(n, *x) for n, s in scores.items() for x in s[key]]
+        if found:
+            lines += ["", f"## {title}", ""]
+            lines += [f"- `{n}` {sid} #{rep}: {', '.join(w)}" for n, sid, rep, w in found]
     lines += ["", "## Blind-test finalists", ""]
     lines += [f"- {f['config']} ({f['group']})" for f in finalists]
     lines += [f"- dropped: {n} ({why})" for n, why in dropped]

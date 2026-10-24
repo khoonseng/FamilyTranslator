@@ -121,6 +121,34 @@ def glitches(text: str) -> list[str]:
     return found
 
 
+# Days counted with 天 (第二天, 三天) are Mandarin; spoken Cantonese says 日.
+_MANDARIN_DAYS = re.compile(
+    r"(?:第[一二三四五六七八九十兩两幾几\d]+|[一二三四五六七八九十兩两幾几\d]+)天"
+)
+
+
+def mandarin_words(text: str, words: list[str]) -> list[str]:
+    """Mandarin words left in Cantonese output (今天, 您, 他們, 很 ...) plus days counted with
+    天. The Cantonese voice reads them aloud, and they sound wrong to the listeners."""
+    found = [m.group() for m in _MANDARIN_DAYS.finditer(text)]
+    for word in sorted(words, key=len, reverse=True):
+        found += [word] * text.count(word)
+        text = text.replace(word, "\0")
+    return found
+
+
+def added_time_words(source: str, text: str, time_words: dict[str, list[str]]) -> list[str]:
+    """Cantonese time words the guide never said, e.g. 聽日 ("tomorrow") when the source has
+    no 明天. `time_words` maps each Cantonese word to the Mandarin words that justify it.
+    A changed day or time could send the family to the wrong place."""
+    source = _to_simplified.convert(source)
+    return [
+        word
+        for word, cues in time_words.items()
+        if word in text and not any(cue in source for cue in cues)
+    ]
+
+
 def simplified_chars(text: str) -> list[str]:
     """Characters that only exist in Simplified form (they change under Simplified→Traditional).
     Heuristic: a few characters valid in both scripts (e.g. 后) are also flagged."""
