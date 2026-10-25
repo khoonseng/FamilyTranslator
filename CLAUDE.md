@@ -13,7 +13,8 @@ phones play Cantonese audio with large-font text. All phones use Singapore roami
 
 ## Current status
 
-- Phase: **Week 1 — Cantonese bake-off** (update this line as phases complete)
+- Phase: **Weeks 2–3 — Single-device MVP, guide → family** (update this line as phases complete).
+  Week 1 (bake-off) closed 2026-10-25; results in `docs/bakeoff-results.md`.
 - Trip: **19–23 Dec 2026** (5 days). Trip configuration incl. the always-on instance goes live 15 Dec.
 - Tech stack: **Python/FastAPI backend, Vue 3 frontend** — see "Stack" below
 - Primary translation model: **Gemini on Vertex AI** (bake-off winner; decided 2026-10-24,
@@ -121,10 +122,11 @@ Build order:
      clip-on); (2) STT receives `cmn-Hans-CN` and `yue-Hant-HK` (with Mandarin alone, Chirp 3
      rewrites Cantonese speech as fluent Mandarin), the transcript is split into sentences, and a
      sentence is dropped when Cantonese-only characters (哋, 唔, 喺, 嘅, 咗, 冇, 佢, 嚟, 啲, 嘢, 嗰,
-     乜, 囉, 喎, 咩, 咁) exceed a share of its characters set by the bake-off (starting point
-     15–20%); (3) very short transcripts and filler (嗯, 啊, 對) are dropped. Neither Chirp 3's
-     language labels (it labelled Cantonese speech as Mandarin) nor confidence scores (it has
-     none usable) are ever a filter.
+     乜, 囉, 喎, 咩, 咁) exceed 15% of its characters (provisional, decided 2026-10-25: check it
+     against real family chatter, at the latest in the weeks 6–7 field tests); (3) very short
+     transcripts and filler (嗯, 啊, 對) are dropped. Neither Chirp 3's language labels (it
+     labelled Cantonese speech as Mandarin) nor confidence scores (it has none usable) are ever
+     a filter.
    - Tint the whole hub screen per mode so the current mode is unmistakable.
    - Capture from the phone's default audio input (`getUserMedia`), so a wired/USB-C clip-on mic
      works if one is added later. Do not build Bluetooth mic support.
@@ -282,19 +284,20 @@ Dockerfile
 
 ## Build phases
 
-- [ ] Week 1 — Bake-off: scripts only, no app. Translate 10–15 Mandarin narration sentences with
-      2–3 LLMs × 2–3 Cantonese voices for a blind test; score Cantonese STT on the family's
-      recordings; deploy a test service to `us-central1` and measure time-to-first-audio.
-      Run each translation model with reasoning off and on its lowest setting, and Qwen and
-      gpt-oss at two temperatures. Google Cloud Translation is tested alongside the LLMs.
-      Score every model's `yue` output for colloquial markers (佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢) and
-      confirm each voice is a true yue-HK voice, not a Mandarin voice reading Traditional text.
-      Score Mandarin STT (Chirp 3 sync and streaming, `gpt-4o-transcribe`, `gpt-transcribe`) on
-      15–20 Chongqing-accented, fast narration clips; measure streaming's end-of-speech-to-text
-      delay; and set the junk filter's Cantonese-character share from how often it drops real
-      guide sentences vs family chatter. Test on the family's iPhones whether listener audio keeps
-      playing with the screen locked. Enable billing with a budget alert. (Google's two ZDR
-      requests became optional on 2026-10-24: both outcomes are accepted.)
+- [x] Week 1 — Bake-off (closed 2026-10-25; results in `docs/bakeoff-results.md`; the family chatter
+      check is postponed, see weeks 6–7): scripts only, no app. Translate 10–15 Mandarin narration
+      sentences with 2–3 LLMs × 2–3 Cantonese voices for a blind test; score Cantonese STT on the
+      family's recordings; deploy a test service to `us-central1` and measure time-to-first-audio.
+      Run each translation model with reasoning off and on its lowest setting, and Qwen and gpt-oss
+      at two temperatures. Google Cloud Translation is tested alongside the LLMs. Score every
+      model's `yue` output for colloquial markers (佢, 係, 嘅, 咗, 唔, 喺, 冇, 咩, 啲, 嘢) and confirm each
+      voice is a true yue-HK voice, not a Mandarin voice reading Traditional text. Score Mandarin
+      STT (Chirp 3 sync and streaming, `gpt-4o-transcribe`, `gpt-transcribe`) on 15–20
+      Chongqing-accented, fast narration clips; measure streaming's end-of-speech-to-text delay; and
+      set the junk filter's Cantonese-character share from how often it drops real guide sentences
+      vs family chatter. Test on the family's iPhones whether listener audio keeps playing with the
+      screen locked. Enable billing with a budget alert. (Google's two ZDR requests became optional
+      on 2026-10-24: both outcomes are accepted.)
 - [ ] Weeks 2–3 — Single-device MVP, guide → family: hub records Mandarin (or takes typed
       Mandarin), shows Cantonese text and plays Cantonese audio on earphones; adapters in place.
 - [ ] Weeks 4–5 — Rooms (QR join), WebSocket fan-out, listener PWA, player states, cache, backfill;
@@ -303,8 +306,9 @@ Dockerfile
       tests in Singapore with the family's own phones in noisy places. Compare transcripts from
       the spare hub phone on the "guide's" lanyard against a clip-on to decide whether to buy a
       mic. Measure time-to-first-audio on the real app (about 4.2 s in week 1, accepted) and
-      ask the family whether it feels fast enough. Phase 2 (family → guide) starts only once
-      guide → family passes.
+      ask the family whether it feels fast enough. Check the junk filter's provisional 15%
+      against family chatter near the hub, if not done earlier. Phase 2 (family → guide) starts
+      only once guide → family passes.
 - [ ] Weeks 8–10 (30 Nov–18 Dec) — Buffer, fixes, phase 2 if guide → family has passed, family
       briefing. 15 Dec: `min-instances=1` on. Trip 19–23 Dec; `min-instances=0` on 24 Dec.
 
@@ -465,3 +469,8 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   s): Chirp 3 final 1.8 s, Gemini 1.0 s, TTS 0.9 s, MP3 download 0.4 s, slightly over the 2–4 s
   target. Re-measured on the real app in the weeks 6–7 field tests with the family; speed-ups
   only if it feels too slow there.
+- 2026-10-25 — Junk-filter share set provisionally at 15% (owner decision); the family chatter
+  recording is postponed. Week 1 dropped 0 of 17 real guide sentences at every threshold from
+  10% to 30%. Still to confirm with real Cantonese chatter (forwarded family voice messages, or
+  at the latest the weeks 6–7 field tests): the threshold, and that Chirp 3 in Guide mode keeps
+  chatter recognisably Cantonese (if not, mic placement is the only defence). Week 1 closed.
