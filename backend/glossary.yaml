@@ -1,0 +1,29 @@
+# Chongqing places and dishes. Draft for the owner to review and extend.
+# zh: Simplified (what the guide says / STT returns; also used as STT phrase hints)
+# yue: Traditional, as it should appear in the Cantonese output
+# en: English rendering
+terms:
+  - {zh: 解放碑, yue: 解放碑, en: Jiefangbei}
+  - {zh: 洪崖洞, yue: 洪崖洞, en: Hongyadong}
+  - {zh: 磁器口, yue: 磁器口, en: Ciqikou Ancient Town}
+  - {zh: 朝天门, yue: 朝天門, en: Chaotianmen}
+  - {zh: 李子坝, yue: 李子壩, en: Liziba Station}
+  - {zh: 长江索道, yue: 長江索道, en: Yangtze River Cableway}
+  - {zh: 白象居, yue: 白象居, en: Baixiangju}
+  - {zh: 鹅岭二厂, yue: 鵝嶺二廠, en: Eling No. 2 Factory}
+  - {zh: 人民大礼堂, yue: 人民大禮堂, en: Great Hall of the People}
+  - {zh: 三峡博物馆, yue: 三峽博物館, en: Three Gorges Museum}
+  - {zh: 观音桥, yue: 觀音橋, en: Guanyinqiao}
+  - {zh: 来福士, yue: 來福士, en: Raffles City}
+  - {zh: 南山一棵树, yue: 南山一棵樹, en: Nanshan Yikeshu Viewpoint}
+  - {zh: 武隆, yue: 武隆, en: Wulong}
+  - {zh: 天生三桥, yue: 天生三橋, en: Three Natural Bridges}
+  - {zh: 渣滓洞, yue: 渣滓洞, en: Zhazidong}
+  - {zh: 白公馆, yue: 白公館, en: Bai Mansion}
+  - {zh: 轻轨, yue: 輕軌, en: light rail}
+  - {zh: 重庆火锅, yue: 重慶火鍋, en: Chongqing hotpot}
+  - {zh: 毛血旺, yue: 毛血旺, en: Mao Xue Wang (spicy blood and offal stew)}
+  - {zh: 重庆小面, yue: 重慶小麵, en: Chongqing noodles}
+  - {zh: 酸辣粉, yue: 酸辣粉, en: hot and sour glass noodles}
+  - {zh: 红油抄手, yue: 紅油抄手, en: wontons in chilli oil}
+  - {zh: 辣子鸡, yue: 辣子雞, en: Chongqing spicy chicken}

@@ -1,0 +1,76 @@
+# App configuration. Every model ID, endpoint, voice and threshold lives here, never in code
+# (hard rule 6). ${VAR} is replaced from the environment (Cloud Run env and secrets, or
+# backend/.env locally). Values come from the week-1 bake-off: docs/bakeoff-results.md.
+
+gcp:
+  project: ${GCP_PROJECT}
+
+hub:
+  pin: ${HUB_PIN}                 # Secret Manager on Cloud Run (hard rule 1)
+
+stt:
+  google:
+    # Chirp 3 runs only in the `us` and `eu` multi-regions. Streaming only, never batch (rule 14).
+    location: us
+    endpoint: us-speech.googleapis.com
+    model: chirp_3
+    guide_languages: [cmn-Hans-CN, yue-Hant-HK]   # Guide mode (hard rule 8)
+    phrase_boost: 10              # glossary phrase biasing strength
+    endpointing: standard         # "short" split words and dropped more speech in week 1
+    idle_close_s: 3.0             # close the stream this long after the last audio
+    renew_after_s: 240            # renew at the next pause after this long (Google's cap: 5 min)
+  openai:
+    # Safety net and fallback (hard rule 9).
+    model: gpt-transcribe
+    timeout_s: 10
+
+translation:
+  # Tried in order per sentence; Cloud Translation is the last resort (hard rule 4).
+  order: [gemini, qwen]
+  # Gemini's `yue` must be complete within this, or the sentence goes to the next provider
+  # (decided 2026-10-24; tuned in testing).
+  yue_deadline_s: 2.5
+  timeout_s: 10
+  context_sentences: 2            # previous source sentences sent as context (hard rule 7)
+  providers:
+    vertex:
+      base_url: https://aiplatform.googleapis.com/v1/projects/${GCP_PROJECT}/locations/global/endpoints/openapi
+      auth: google                # service-account token, no key
+    groq:
+      base_url: https://api.groq.com/openai/v1
+      auth: GROQ_API_KEY
+  models:
+    gemini:
+      provider: vertex
+      model: google/gemini-3.6-flash
+      temperature: 0.2
+      params: {reasoning_effort: minimal}
+      deadline: true              # the yue deadline applies (Vertex can be slow; run 6)
+    qwen:
+      provider: groq
+      model: qwen/qwen3.8-27b     # Preview: re-check the ID before the trip
+      temperature: 0.2
+      params: {reasoning_effort: none}
+  cloud_translate:
+    location: us-central1
+
+tts:
+  google:
+    endpoint: texttospeech.googleapis.com
+    language: yue-HK
+    voices: [yue-HK-Chirp3-HD-Despina, yue-HK-Standard-A]   # main, then fallback
+    speaking_rate: 1.0            # never sped up (hard rule 11)
+    timeout_s: 8
+
+pipeline:
+  # Junk filter (hard rule 8). Layer 2: drop a sentence when Cantonese-only characters exceed
+  # this share (provisional, decided 2026-10-25; check against real family chatter).
+  cantonese_share: 0.15
+  cantonese_only_chars: [哋, 唔, 喺, 嘅, 咗, 冇, 佢, 嚟, 啲, 嘢, 嗰, 乜, 囉, 喎, 咩, 咁]
+  # Layer 3: very short sentences and filler.
+  min_chars: 2
+  filler: [嗯, 啊, 对, 對, 哦, 呃, 那个, 這個, 这个]
+  # Bubbles (hard rule 9): a new one after a pause longer than this, or at these caps.
+  bubble_pause_s: 2.0
+  bubble_max_audio_s: 45
+  bubble_max_sentences: 6

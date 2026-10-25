@@ -1,0 +1,26 @@
+{
+  "name": "cq-translator-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run vad-assets && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "vad-assets": "node scripts/copy-vad-assets.js"
+  },
+  "dependencies": {
+    "@ricky0123/vad-web": "0.0.31",
+    "pinia": "4.0.3",
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@vitejs/plugin-vue": "6.0.10",
+    "tailwindcss": "4.3.3",
+    "vite": "8.3.4",
+    "vite-plugin-pwa": "2.0.0",
+    "vitest": "5.0.3"
+  }
+}
