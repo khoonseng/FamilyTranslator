@@ -5,7 +5,7 @@ import json
 from app import config
 from app.pipeline.session import HubSession
 from app.schemas import Mode, SegmentEnd, SegmentStart, TypedText
-from tests.fakes import FakeStt, FakeTranslator, FakeTts, fake_providers
+from tests.fakes import FakeStt, FakeTranscribe, FakeTranslator, FakeTts, fake_providers
 
 ONE_SECOND = bytes(32_000)
 
@@ -26,9 +26,13 @@ class Hub:
         return [m for m in self.messages if isinstance(m, dict) and m["type"] == kind]
 
 
-def make(providers=None):
+def make(providers=None, echo=0.0, hold_s=0.05):
+    """echo=0 switches echo detection off: the fake translator's "粵:<text>" would make every
+    test sentence look like an echo of the one before."""
     hub = Hub()
     cfg = copy.deepcopy(config.load())
+    cfg["pipeline"]["echo_max_mismatch"] = echo
+    cfg["pipeline"]["hold_s"] = hold_s
     session = HubSession(providers or fake_providers(), cfg, hub.json, hub.bytes, "test")
     return session, hub
 
@@ -49,9 +53,9 @@ async def speak(session, stt, transcript=None, pause_s=0.5, seconds=1, end=True)
     return stream
 
 
-async def guide_session(**kwargs):
+async def guide_session(echo=0.0, **kwargs):
     stt = FakeStt()
-    session, hub = make(fake_providers(stt=stt, **kwargs))
+    session, hub = make(fake_providers(stt=stt, **kwargs), echo=echo)
     await session.start()
     await session.on_message(Mode(mode="guide"))
     return session, hub, stt
@@ -202,3 +206,120 @@ async def test_switching_guide_off_closes_the_open_segment():
     assert stream.closed and session.live is None
     session.on_audio(ONE_SECOND)
     assert len(stream.sent) == len(ONE_SECOND)
+
+
+# --- safety net (hard rule 9) -----------------------------------------------------------------
+
+
+async def test_audio_chirp_skipped_goes_to_gpt_transcribe():
+    transcribe = FakeTranscribe("一边吃烧烤一边看夜景。")
+    session, hub, stt = await guide_session(transcribe=transcribe)
+    await session.on_message(SegmentStart(pause_s=3))
+    session.on_audio(ONE_SECOND * 6)
+    stt.streams[-1].final("可以去悬崖餐厅看夜景。", end_s=2.0)  # Chirp 3 stopped at 2 s of 6
+    await session.on_message(SegmentEnd())
+    await settle()
+    assert transcribe.calls == [int((6 - 2.0 + 0.2) * 32_000)]  # from 1.8 s, a little overlap
+    assert [m["zh"] for m in hub.of("sentence")] == [
+        "可以去悬崖餐厅看夜景。",
+        "一边吃烧烤一边看夜景。",
+    ]
+
+
+async def test_finals_reaching_the_end_need_no_safety_net():
+    transcribe = FakeTranscribe("不该出现。")
+    session, _, stt = await guide_session(transcribe=transcribe)
+    await session.on_message(SegmentStart(pause_s=3))
+    session.on_audio(ONE_SECOND * 3)
+    stt.streams[-1].final("我们到了。", end_s=2.3)  # within 1 s of the 3 s end (the VAD tail)
+    await session.on_message(SegmentEnd())
+    await settle()
+    assert transcribe.calls == []
+
+
+async def test_a_failed_stream_sends_the_whole_segment():
+    transcribe = FakeTranscribe("大家跟紧我。")
+    session, hub, stt = await guide_session(transcribe=transcribe)
+    await session.on_message(SegmentStart(pause_s=3))
+    session.on_audio(ONE_SECOND * 2)
+    stt.streams[-1].error = RuntimeError("stream down")
+    await session.on_message(SegmentEnd())
+    await settle()
+    assert transcribe.calls == [2 * 32_000]
+    assert [m["zh"] for m in hub.of("sentence")] == ["大家跟紧我。"]
+
+
+async def test_gpt_transcribe_repeating_its_prompt_is_ignored():
+    transcribe = FakeTranscribe("Places and dishes: 解放碑, 洪崖洞")
+    session, hub, stt = await guide_session(transcribe=transcribe)
+    await speak(session, stt, seconds=3)  # no finals at all
+    await settle()
+    assert transcribe.calls and hub.of("sentence") == []
+
+
+# --- half-sentence hold ---------------------------------------------------------------------
+
+
+async def test_a_sentence_cut_by_a_pause_is_joined_with_the_rest():
+    translator = FakeTranslator()
+    session, hub, stt = await guide_session(translator=translator)
+    await speak(session, stt, "我们等一下", pause_s=3)
+    await speak(session, stt, "去洪崖洞。", pause_s=0.8)  # carries on within the hold
+    await settle()
+    assert [m["zh"] for m in hub.of("sentence")] == ["我们等一下去洪崖洞。"]
+
+
+async def test_a_half_sentence_goes_on_alone_if_the_guide_stops():
+    session, hub, stt = await guide_session()
+    await speak(session, stt, "我们等一下", pause_s=3)
+    await settle(0.02)
+    assert hub.of("sentence") == []  # held ...
+    await settle(0.1)  # ... until hold_s passes
+    assert [m["zh"] for m in hub.of("sentence")] == ["我们等一下"]
+
+
+async def test_a_half_sentence_goes_on_when_guide_is_switched_off():
+    session, hub, stt = await guide_session()
+    await speak(session, stt, "我们等一下", pause_s=3, end=False)
+    await session.on_message(Mode(mode="off"))
+    await settle(0.02)
+    assert [m["zh"] for m in hub.of("sentence")] == ["我们等一下"]
+
+
+async def test_complete_sentences_are_not_held():
+    session, hub, stt = await guide_session()
+    await speak(session, stt, "我们到了。", pause_s=3)
+    await settle(0.02)
+    assert [m["zh"] for m in hub.of("sentence")] == ["我们到了。"]
+
+
+async def test_a_half_sentence_is_not_held_across_two_segments():
+    session, hub, stt = await guide_session()
+    await speak(session, stt, "我们等一下", pause_s=3)
+    await speak(session, stt, pause_s=0.8)  # the next segment brings no words
+    await settle(0.02)
+    assert [m["zh"] for m in hub.of("sentence")] == ["我们等一下"]
+
+
+# --- echo detection (junk-filter layer 4) -----------------------------------------------------
+
+
+async def test_our_own_cantonese_overheard_is_dropped():
+    translator = FakeTranslator()
+    session, hub, stt = await guide_session(echo=0.6, translator=translator)
+    await session.on_message(TypedText(text="洪崖洞晚上七点半以后开灯。"))
+    await settle()
+    # A listener phone on speaker plays "粵:洪崖洞晚上七点半以后开灯。"; the hub hears it.
+    await speak(session, stt, "洪崖洞晚上7点半以后开灯。", pause_s=3)
+    await settle()
+    assert len(hub.of("sentence")) == 1
+    assert len(translator.calls) == 1
+
+
+async def test_a_new_guide_sentence_is_not_an_echo():
+    session, hub, stt = await guide_session(echo=0.6)
+    await session.on_message(TypedText(text="洪崖洞晚上七点半以后开灯。"))
+    await settle()
+    await speak(session, stt, "明天早上七点在酒店大堂集合。", pause_s=3)
+    await settle()
+    assert len(hub.of("sentence")) == 2

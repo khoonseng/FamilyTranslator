@@ -82,12 +82,26 @@ class FakeTts:
         return Speech(f"mp3:{text}".encode(), "yue-HK-Chirp3-HD-Despina", 0.1)
 
 
+class FakeTranscribe:
+    """gpt-transcribe: returns `text` (or raises `error`) and records how much audio it got."""
+
+    def __init__(self, text="", error=None):
+        self.text, self.error = text, error
+        self.calls: list[int] = []  # bytes of PCM per call
+
+    async def transcribe(self, pcm: bytes) -> str:
+        self.calls.append(len(pcm))
+        if self.error:
+            raise self.error
+        return self.text
+
+
 @dataclass
 class FakeProviders:
     translator: FakeTranslator
     tts: FakeTts
     stt: FakeStt
-    transcribe: object = None
+    transcribe: FakeTranscribe
 
 
 def fake_providers(**kwargs) -> FakeProviders:
@@ -95,4 +109,5 @@ def fake_providers(**kwargs) -> FakeProviders:
         kwargs.get("translator", FakeTranslator()),
         kwargs.get("tts", FakeTts()),
         kwargs.get("stt", FakeStt()),
+        kwargs.get("transcribe", FakeTranscribe()),
     )

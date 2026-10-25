@@ -122,16 +122,20 @@ Build order:
      reports guide speech from its VAD), and nothing a family member does blocks the guide's
      capture. Typing works any time; replies and guide sentences show in order of arrival.
    - Typed text (hub or listener) may be language-detected; this rule covers speech only.
-   - In Guide mode, a three-layer junk filter drops speech that isn't the guide before translation.
+   - In Guide mode, a four-layer junk filter drops speech that isn't the guide before translation.
      It is a filter, never a router: (1) the mic sits close to the guide (spare hub phone or
      clip-on); (2) STT receives `cmn-Hans-CN` and `yue-Hant-HK` (with Mandarin alone, Chirp 3
      rewrites Cantonese speech as fluent Mandarin), the transcript is split into sentences, and a
      sentence is dropped when Cantonese-only characters (哋, 唔, 喺, 嘅, 咗, 冇, 佢, 嚟, 啲, 嘢, 嗰,
      乜, 囉, 喎, 咩, 咁) exceed 15% of its characters (provisional, decided 2026-10-25: check it
      against real family chatter, at the latest in the weeks 6–7 field tests); (3) very short
-     transcripts and filler (嗯, 啊, 對) are dropped. Neither Chirp 3's language labels (it
-     labelled Cantonese speech as Mandarin) nor confidence scores (it has none usable) are ever
-     a filter.
+     transcripts and filler (嗯, 啊, 對) are dropped; (4) echo detection (owner decision
+     2026-10-25): a sentence that nearly matches one of our own translations from the last
+     60 s (mismatch below 0.6, after converting to Simplified) is our Cantonese overheard from
+     a listener's speaker, and is dropped, so it can never loop. Layer 2 caught only 1–3 of 31
+     such clips (Chirp 3 writes them as 系, 慨, 渠), so it may be weaker on real chatter too.
+     Neither Chirp 3's language labels (it labelled Cantonese speech as Mandarin) nor
+     confidence scores (it has none usable) are ever a filter.
    - Tint the whole hub screen per mode so the current mode is unmistakable.
    - Capture from the phone's default audio input (`getUserMedia`), so a wired/USB-C clip-on mic
      works if one is added later. Do not build Bluetooth mic support.
@@ -147,6 +151,10 @@ Build order:
      segment, it came through in full, about 0.5 s sooner. It splits Chirp 3's final
      transcripts into sentences at punctuation, filters them (rule 8) and translates each one
      as soon as it is ready; a later segment's sentences wait for the earlier segment's.
+   - **Half-sentence hold** (owner decision 2026-10-25): a sentence ends at punctuation, not at
+     a pause. A segment's trailing words without sentence-ending punctuation are held; if the
+     guide carries on within 1.5 s, the next segment's words are joined to them, otherwise
+     they are translated as they are. Chirp 3 left 4 of 6 mid-sentence cut-offs unpunctuated.
    - **Safety net:** the hub's VAD also cuts the audio into segments at pauses (about 0.6–0.8 s,
      capped at 15 s), which the server keeps. When a segment ends, if Chirp 3's final
      transcripts don't reach to within 1 s of its end, the uncovered audio is sent to
@@ -504,3 +512,12 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   0.5–1.6 s after the speech ended (about 1.8 s before). The hub sends no extra 1 s of
   silence: its VAD's own pause detection ends each segment. The safety net stays (6-0008 is
   still cut short).
+- 2026-10-25 — Half-sentence hold and echo detection (owner decisions; hard rules 8 and 9).
+  Hold: words a pause cut off before sentence-ending punctuation wait up to 1.5 s for the
+  guide to carry on and are joined to the next segment's (Chirp 3 left 4 of 6 such cut-offs
+  unpunctuated; both live tests came back whole). Echo detection, junk-filter layer 4: a
+  sentence nearly matching one of our own translations from the last 60 s is dropped, so a
+  listener phone on speaker can't loop (29 of 31 Despina clips caught, no false alarms in 930
+  comparisons; layer 2 caught only 1–3, since Chirp 3 writes the Cantonese as 系, 慨, 渠).
+  Adds `opencc-python-reimplemented` to the backend (owner approved). The hub's own iPhone
+  test confirmed nothing is lost while it keeps listening (earphones switch on).

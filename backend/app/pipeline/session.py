@@ -5,23 +5,32 @@ about 0.6-0.8 s), then `segment_end`. Each segment gets its own Chirp 3 stream, 
 start and closed at its end, which makes Chirp 3 return the final transcript at once (decided
 2026-10-25: a long-lived stream lost a whole segment of real guide speech in testing).
 
-Each final transcript is split into sentences at punctuation; the junk filter drops chatter,
-filler and fragments; every kept sentence is translated and spoken as soon as it is ready,
-concurrently, but sent to the hub strictly in order: its text first, then its clip. A later
-segment's sentences wait for the earlier segment's. Typed Mandarin skips speech-to-text and
-the junk filter.
+Safety net (hard rule 9): the session keeps each segment's audio. When its stream ends, audio
+that Chirp 3's finals don't reach to within `gap_s` of the end goes to `gpt-transcribe`; if
+the stream failed, the whole segment does. Each new stream is a fresh try, so the fallback
+lasts only as long as Chirp 3 keeps failing.
+
+Transcripts are split into sentences at punctuation. A trailing piece without sentence-ending
+punctuation is held: a pause mid-sentence ends a segment, and the next segment's words are
+joined to it if the guide carries on within `hold_s`; otherwise it goes on as it is (decided
+2026-10-25). The junk filter (text layers, then echo detection) drops chatter, filler,
+fragments and our own Cantonese overheard from a listener's speaker. Every kept sentence is
+translated and spoken as soon as it is ready, concurrently, but sent to the hub strictly in
+order: its text first, then its clip. A later segment's sentences wait for the earlier
+segment's. Typed Mandarin skips speech-to-text and the junk filter.
 
 Logs carry ids, labels and timings only, never text or audio (hard rule 14)."""
 
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 
 from app.logs import log
 from app.pipeline.bubbles import Bubbles
-from app.pipeline.text import drop_reason, split_sentences
+from app.pipeline.echo import EchoGuard
+from app.pipeline.text import drop_reason, is_complete, split_sentences
 from app.providers.base import SpeechFailed, TranslationFailed
 from app.schemas import (
     Clip,
@@ -46,6 +55,17 @@ class _Live:
     previous: asyncio.Task | None  # the earlier segment's consumer: its sentences go first
     consumer: asyncio.Task | None = None
     ended_at: float | None = None
+    pcm: bytearray = field(default_factory=bytearray)  # kept for the safety net
+    covered_s: float = 0.0  # how far Chirp 3's finals reach into the segment's audio
+
+
+@dataclass
+class _Pending:
+    """The start of a sentence that a pause cut off, waiting for the rest."""
+
+    text: str
+    bubble: int
+    carried: int = 0  # segments that ended without finishing it
 
 
 def _done() -> asyncio.Future:
@@ -65,6 +85,7 @@ class HubSession:
     ):
         self.p = providers
         self.stt_cfg = cfg["stt"]["google"]
+        self.net_cfg = cfg["stt"]["safety_net"]
         self.pipe_cfg = cfg["pipeline"]
         self.context_n = cfg["translation"]["context_sentences"]
         self._send_json, self._send_bytes = send_json, send_bytes
@@ -78,6 +99,9 @@ class HubSession:
         )
         self.live: _Live | None = None  # the open segment's stream
         self._last_consumer: asyncio.Task | None = None
+        self._pending: _Pending | None = None
+        self._flush: asyncio.Task | None = None
+        self.echo = EchoGuard(self.pipe_cfg["echo_window_s"], self.pipe_cfg["echo_max_mismatch"])
         self._next_id = 1
         self._context: deque[str] = deque(maxlen=self.context_n)
         self._text_done = _done()
@@ -107,6 +131,7 @@ class HubSession:
         if self.mode != "guide" or self.live is None:
             return
         self.live.chirp.send(pcm)
+        self.live.pcm.extend(pcm)
         self.bubbles.add_audio(self.live.bubble, len(pcm) / BYTES_PER_SECOND)
 
     async def close(self) -> None:
@@ -121,11 +146,17 @@ class HubSession:
         log("hub_mode", conn=self.conn, mode=mode)
         if mode == "off":
             self._end_segment()
+            # Once the last segment is transcribed, its half-sentence goes on as it is.
+            last = self._last_consumer
+            self._spawn(self._flush_after(last))
 
     def _on_segment_start(self, pause_s: float) -> None:
         if self.mode != "guide":
             return
         self._end_segment()  # a segment_end that never came
+        if self._flush:  # the guide carried on: the held half-sentence waits for this segment
+            self._flush.cancel()
+            self._flush = None
         bubble = self.bubbles.on_segment(pause_s)
         live = _Live(self.p.stt.open(self.stt_cfg["guide_languages"]), bubble, self._last_consumer)
         live.consumer = self._last_consumer = self._spawn(self._consume(live))
@@ -147,19 +178,96 @@ class HubSession:
             await asyncio.gather(live.previous, return_exceptions=True)
         while (final := await live.chirp.finals.get()) is not None:
             after_end = round(perf_counter() - live.ended_at, 3) if live.ended_at else None
-            bubble = live.bubble
-            kept = 0
-            for sentence in split_sentences(final.text):
-                reason = drop_reason(sentence, self.pipe_cfg)
-                if reason:
-                    log("sentence_dropped", conn=self.conn, reason=reason)
-                    continue
-                self._dispatch(sentence, bubble, source="speech")
-                kept += 1
+            live.covered_s = max(live.covered_s, final.end_s)
+            kept = self._take(final.text, live.bubble)
             log("stt_final", conn=self.conn, end_s=final.end_s, after_end_s=after_end, kept=kept)
         if live.chirp.error is not None:
             log("stt_error", conn=self.conn, error=type(live.chirp.error).__name__)
         log("stt_closed", conn=self.conn, audio_s=round(live.chirp.audio_s, 1))
+        await self._safety_net(live)
+        self._hold_or_flush()
+
+    async def _safety_net(self, live: _Live) -> None:
+        """Hard rule 9: speech Chirp 3 skipped, or a failed stream, goes to gpt-transcribe."""
+        audio_s = len(live.pcm) / BYTES_PER_SECOND
+        if live.chirp.error is not None:
+            reason, start_s = "stream_failed", 0.0
+        elif audio_s - live.covered_s > self.net_cfg["gap_s"]:
+            reason, start_s = "uncovered", max(0.0, live.covered_s - self.net_cfg["back_s"])
+        else:
+            return
+        start = int(start_s * BYTES_PER_SECOND) // 2 * 2
+        if (len(live.pcm) - start) / BYTES_PER_SECOND < self.net_cfg["min_s"]:
+            return
+        t0 = perf_counter()
+        try:
+            text = await self.p.transcribe.transcribe(bytes(live.pcm[start:]))
+        except Exception as exc:  # noqa: BLE001 - the segment is lost; the guide carries on
+            log("safety_net", conn=self.conn, reason=reason, outcome=type(exc).__name__)
+            return
+        if self.net_cfg["prompt_echo"] in text:  # a known hallucination on silence
+            text = ""
+        kept = self._take(text, live.bubble) if text else 0
+        log(
+            "safety_net",
+            conn=self.conn,
+            reason=reason,
+            audio_s=round((len(live.pcm) - start) / BYTES_PER_SECOND, 2),
+            seconds=round(perf_counter() - t0, 3),
+            kept=kept,
+        )
+
+    # --- transcripts into sentences -----------------------------------------------------------
+
+    def _take(self, text: str, bubble: int) -> int:
+        """Splits new transcript text into sentences, joined to a held half-sentence, and holds
+        a new unfinished tail. Returns how many sentences were kept."""
+        if self._pending:
+            text, bubble = self._pending.text + text, self._pending.bubble
+            self._pending = None
+        sentences = split_sentences(text)
+        if sentences and not is_complete(sentences[-1]):
+            self._pending = _Pending(sentences.pop(), bubble)
+        return sum(self._accept(sentence, bubble) for sentence in sentences)
+
+    def _accept(self, sentence: str, bubble: int) -> bool:
+        """Junk filter (hard rule 8): the text layers, then echo detection."""
+        reason = drop_reason(sentence, self.pipe_cfg)
+        if reason is None and self.echo.is_echo(sentence):
+            reason = "echo"
+        if reason:
+            log("sentence_dropped", conn=self.conn, reason=reason)
+            return False
+        self._dispatch(sentence, bubble, source="speech")
+        return True
+
+    def _hold_or_flush(self) -> None:
+        """After a segment: keep holding a half-sentence for the next one, or let it go."""
+        if not self._pending:
+            return
+        self._pending.carried += 1
+        if self._pending.carried > 1:  # the next segment didn't finish it either
+            self._flush_pending()
+        elif self.live is None:  # no new segment yet: wait a moment for the guide to go on
+            self._flush = self._spawn(self._flush_later())
+
+    async def _flush_later(self) -> None:
+        await asyncio.sleep(self.pipe_cfg["hold_s"])
+        self._flush = None
+        self._flush_pending()
+
+    async def _flush_after(self, consumer: asyncio.Task | None) -> None:
+        if consumer:
+            await asyncio.gather(consumer, return_exceptions=True)
+        if self._flush:
+            self._flush.cancel()
+            self._flush = None
+        self._flush_pending()
+
+    def _flush_pending(self) -> None:
+        if self._pending:
+            pending, self._pending = self._pending, None
+            self._accept(pending.text, pending.bubble)
 
     # --- one sentence -------------------------------------------------------------------------
 
@@ -207,6 +315,7 @@ class HubSession:
             if translation is None:
                 fields["outcome"] = "no_translation"
                 return
+            self.echo.remember(translation.yue)
             fields |= {
                 "provider": translation.provider,
                 "attempts": [f"{a.provider}:{a.outcome}" for a in translation.attempts],

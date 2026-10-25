@@ -25,6 +25,11 @@ stt:
     # Safety net and fallback (hard rule 9).
     model: gpt-transcribe
     timeout_s: 10
+  safety_net:
+    gap_s: 1.0            # finals must reach to within this of the segment's end
+    back_s: 0.2           # start the uncovered audio this much earlier, so no word is clipped
+    min_s: 0.5            # less uncovered audio than this isn't worth a call
+    prompt_echo: "Places and dishes"   # gpt-transcribe repeating its prompt on silence
 
 translation:
   # Tried in order per sentence; Cloud Translation is the last resort (hard rule 4).
@@ -73,6 +78,12 @@ pipeline:
   min_chars: 2
   filler: [嗯, 啊, 对, 對, 哦, 呃, 那个, 這個, 这个]
   # Bubbles (hard rule 9): a new one after a pause longer than this, or at these caps.
+  # A sentence cut off by a pause waits this long for the guide to carry on (2026-10-25).
+  hold_s: 1.5
+  # Layer 4, echo detection (2026-10-25): drop a guide sentence that nearly matches one of our
+  # translations from the last `echo_window_s` (mismatch below `echo_max_mismatch`).
+  echo_window_s: 60
+  echo_max_mismatch: 0.6
   bubble_pause_s: 2.0
   bubble_max_audio_s: 45
   bubble_max_sentences: 6
