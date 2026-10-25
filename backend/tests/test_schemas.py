@@ -5,7 +5,9 @@ from app.schemas import Hello, Mode, SegmentStart, TypedText, hub_message
 
 
 def test_hub_messages_parse_by_type():
-    assert isinstance(hub_message.validate_json('{"type": "hello", "pin": "1"}'), Hello)
+    assert isinstance(
+        hub_message.validate_json('{"type": "hello", "pin": "1", "token": "2"}'), Hello
+    )
     assert hub_message.validate_json('{"type": "mode", "mode": "guide"}') == Mode(mode="guide")
     assert hub_message.validate_json('{"type": "segment_start", "pause_s": 2.4}').pause_s == 2.4
     assert hub_message.validate_json('{"type": "text", "text": "你好"}') == TypedText(text="你好")

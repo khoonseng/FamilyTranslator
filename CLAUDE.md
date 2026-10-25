@@ -68,6 +68,10 @@ Build order:
    Only a phone that has entered the hub PIN may send audio or text that triggers provider calls:
    the hub, and in phase 2 family phones that talk or type replies. Phones that only listen join
    with the QR room token and never need the PIN.
+   - The hub also sends the API token (owner decision 2026-10-25: both 8 digits, entered once
+     per phone). The API token also guards `/openapi.json` and every API endpoint; the `/docs`
+     page is an empty shell that asks for it and sends it as an `X-API-Token` header, never in
+     a URL. Open without either: `/health` and the page's own files.
 2. Cloud Run runs in `us-central1` with `max-instances=1` (room state lives in memory) and
    `--cpu 1`. Never go below 1 vCPU: Cloud Run then forces max concurrency to 1, which allows only
    one WebSocket. Keep concurrency high enough for every phone in the room (the default 80 is
@@ -88,7 +92,8 @@ Build order:
      translation fallback (rule 4); it authenticates with the service account.
    - STT and TTS adapters are provider-specific (Google and OpenAI APIs differ).
    - Google speech APIs and Gemini on Vertex AI authenticate with the Cloud Run service account
-     (no keys). Only the Groq and OpenAI keys live in Secret Manager.
+     (no keys). Secret Manager holds only the Groq and OpenAI keys, the hub PIN and the API
+     token.
    - Model IDs live in config, never hard-coded: Groq's lineup changes within weeks.
    - Reasoning is switched off on the translation LLM, or set to the lowest level the model allows
      (`gpt-oss-120b`: low), as per-provider config. STT and TTS have no reasoning setting. The
@@ -484,3 +489,8 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   rule 13: an "Earphones in" switch keeps capture on while the hub plays Cantonese. The hard
   rule 9 safety net is built last in weeks 2–3. Rooms, listeners, Cloud Storage and replay
   follow in weeks 4–5.
+- 2026-10-25 — API token alongside the hub PIN (owner decision): the hub sends both (8 digits
+  each, entered once per phone); the token also guards `/openapi.json` and every API endpoint,
+  so `/docs` stays on in the real app (an empty page that asks for the token and sends it as a
+  header). Four secrets in Secret Manager: Groq key, OpenAI key, hub PIN, API token. No limit
+  on failed attempts for now (owner decision).

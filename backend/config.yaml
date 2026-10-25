@@ -5,8 +5,11 @@
 gcp:
   project: ${GCP_PROJECT}
 
-hub:
-  pin: ${HUB_PIN}                 # Secret Manager on Cloud Run (hard rule 1)
+access:
+  # Hard rule 1 (owner decision 2026-10-25): the hub needs both; the API and /docs need the
+  # token. Both come from Secret Manager on Cloud Run. Empty = nobody gets in.
+  hub_pin: ${HUB_PIN}
+  api_token: ${API_TOKEN}
 
 stt:
   google:

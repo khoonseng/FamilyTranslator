@@ -2,12 +2,12 @@
 # Deploys chongqing-translator to Cloud Run in us-central1 (hard rule 2).
 #
 #   ./deploy.sh            build and deploy (scales to zero; see CLAUDE.md for 15-23 Dec)
-#   ./deploy.sh --secrets  create or update the 3 secrets from backend/.env (asks first)
+#   ./deploy.sh --secrets  create or update the 4 secrets from backend/.env (asks first)
 #
 # Only the app's sources are uploaded: the files git tracks or would track under backend/ and
 # frontend/, copied to a temporary folder. .env files, node_modules, bakeoff/ recordings and
 # results never leave the laptop. The service runs as its own service account, which may call
-# Speech-to-Text, Vertex AI, Text-to-Speech and Cloud Translation, and read its own 3 secrets.
+# Speech-to-Text, Vertex AI, Text-to-Speech and Cloud Translation, and read its own 4 secrets.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -20,8 +20,10 @@ set +a
 SERVICE=chongqing-translator
 REGION=us-central1
 ACCOUNT="$SERVICE@$GCP_PROJECT.iam.gserviceaccount.com"
-# Secret Manager name -> environment variable (only the Groq and OpenAI keys, plus the hub PIN).
-SECRETS=(groq-api-key:GROQ_API_KEY openai-api-key:OPENAI_API_KEY hub-pin:HUB_PIN)
+# Secret Manager name -> environment variable: the Groq and OpenAI keys, the hub PIN and the
+# API token.
+SECRETS=(groq-api-key:GROQ_API_KEY openai-api-key:OPENAI_API_KEY hub-pin:HUB_PIN
+  api-token:API_TOKEN)
 
 if [[ "${1:-}" == "--secrets" ]]; then
   read -r -p "Create or update ${#SECRETS[@]} secrets in $GCP_PROJECT from backend/.env? [y/N] " ok

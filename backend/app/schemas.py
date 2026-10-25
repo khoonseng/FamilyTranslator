@@ -9,8 +9,11 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 
 class Hello(BaseModel):
+    """First message: the hub PIN and the API token (hard rule 1)."""
+
     type: Literal["hello"] = "hello"
     pin: str
+    token: str
 
 
 class Mode(BaseModel):
@@ -54,7 +57,7 @@ class Ready(BaseModel):
 
 class Error(BaseModel):
     type: Literal["error"] = "error"
-    code: str  # e.g. "bad_pin", "bad_message"
+    code: str  # e.g. "bad_credentials", "bad_message"
     message: str = ""
 
 
