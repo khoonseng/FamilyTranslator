@@ -13,8 +13,10 @@ phones play Cantonese audio with large-font text. All phones use Singapore roami
 
 ## Current status
 
-- Phase: **Weeks 2–3 — Single-device MVP, guide → family** (update this line as phases complete).
-  Week 1 (bake-off) closed 2026-10-25; results in `docs/bakeoff-results.md`.
+- Phase: **Weeks 4–5 — Rooms, listener phones and replay** (update this line as phases
+  complete; starts in plan mode). Week 1 (bake-off) closed 2026-10-25, results in
+  `docs/bakeoff-results.md`; weeks 2–3 (single-device MVP) closed 2026-10-26, deployed at
+  https://chongqing-translator-408139569144.us-central1.run.app.
 - Trip: **19–23 Dec 2026** (5 days). Trip configuration incl. the always-on instance goes live 15 Dec.
 - Tech stack: **Python/FastAPI backend, Vue 3 frontend** — see "Stack" below
 - Primary translation model: **Gemini on Vertex AI** (bake-off winner; decided 2026-10-24,
@@ -318,8 +320,9 @@ Dockerfile
       vs family chatter. Test on the family's iPhones whether listener audio keeps playing with the
       screen locked. Enable billing with a budget alert. (Google's two ZDR requests became optional
       on 2026-10-24: both outcomes are accepted.)
-- [ ] Weeks 2–3 — Single-device MVP, guide → family: hub records Mandarin (or takes typed
-      Mandarin), shows Cantonese text and plays Cantonese audio on earphones; adapters in place.
+- [x] Weeks 2–3 — Single-device MVP, guide → family (closed 2026-10-26; tested on the owner's
+      iPhone): hub records Mandarin (or takes typed Mandarin), shows Cantonese text and plays
+      Cantonese audio on earphones; adapters in place.
 - [ ] Weeks 4–5 — Rooms (QR join), WebSocket fan-out, listener PWA, player states, cache, backfill;
       English text if time permits. (Primary translation model already decided: Gemini.)
 - [ ] Weeks 6–7 — Switch to the trip configuration first (see "Billing and plans"). Then field
@@ -521,3 +524,9 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   comparisons; layer 2 caught only 1–3, since Chirp 3 writes the Cantonese as 系, 慨, 渠).
   Adds `opencc-python-reimplemented` to the backend (owner approved). The hub's own iPhone
   test confirmed nothing is lost while it keeps listening (earphones switch on).
+- 2026-10-26 — Weeks 2–3 closed (owner): the single-device MVP works on the owner's iPhone,
+  with Cantonese text about 3 s and audio about 4 s after each sentence, translations judged
+  80–90% accurate, and nothing lost while clips play on earphones. Still open, not decided:
+  the family chatter check (now more urgent: layer 2 is weak), a loudness gate with automatic
+  gain control off (proposed for the weeks 6–7 field tests), and pausing the hub from another
+  PIN phone (could join weeks 4–5). Next: weeks 4–5, in plan mode.
