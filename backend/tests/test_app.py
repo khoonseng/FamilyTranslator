@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app import config, main
+from tests.fakes import fake_providers
 
 PIN, TOKEN = "24681357", "97531864"
 
@@ -12,6 +13,7 @@ def client(monkeypatch):
     access = config.load()["access"]
     monkeypatch.setitem(access, "hub_pin", PIN)
     monkeypatch.setitem(access, "api_token", TOKEN)
+    monkeypatch.setattr(main, "providers", fake_providers)  # no network in tests
     return TestClient(main.app)
 
 
@@ -61,3 +63,25 @@ def test_nothing_configured_lets_nobody_in(client, monkeypatch):
     monkeypatch.setitem(access, "api_token", "")
     assert not main.pin_ok("") and not main.pin_ok(PIN)
     assert not main.token_ok("") and not main.token_ok(TOKEN)
+
+
+def test_typed_text_comes_back_translated_with_its_clip(client):
+    with client.websocket_connect("/ws/hub") as ws:
+        ws.send_json({"type": "hello", "pin": PIN, "token": TOKEN})
+        assert ws.receive_json() == {"type": "ready"}
+        ws.send_json({"type": "text", "text": "我们在门口集合。"})
+        sentence = ws.receive_json()
+        assert (sentence["type"], sentence["yue"]) == ("sentence", "粵:我们在门口集合。")
+        clip = ws.receive_json()
+        assert clip["type"] == "clip"
+        assert len(ws.receive_bytes()) == clip["bytes"]
+
+
+def test_bad_message_is_reported_not_fatal(client):
+    with client.websocket_connect("/ws/hub") as ws:
+        ws.send_json({"type": "hello", "pin": PIN, "token": TOKEN})
+        ws.receive_json()
+        ws.send_json({"type": "mode", "mode": "family"})  # phase 2, not in the MVP
+        assert ws.receive_json()["code"] == "bad_message"
+        ws.send_json({"type": "text", "text": "好。"})
+        assert ws.receive_json()["type"] == "sentence"

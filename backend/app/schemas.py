@@ -62,20 +62,38 @@ class Error(BaseModel):
 
 
 class Sentence(BaseModel):
-    """One translated sentence. `zh` is the transcript (or typed text), never regenerated."""
+    """One sentence, sent as soon as its Cantonese is ready, in order. `zh` is the transcript
+    (or typed text), never regenerated. If every translator failed, `yue` is empty and the hub
+    operator interprets (architecture doc, "Failover")."""
 
     type: Literal["sentence"] = "sentence"
     id: int
     bubble_id: int
     zh: str
     yue: str
-    en: str = ""
+    status: Literal["ok", "no_translation"] = "ok"
     provider: str = ""  # which translator produced it (gemini, qwen, cloud-translate)
 
 
 class Clip(BaseModel):
-    """Header for the MP3 that follows as the next binary frame."""
+    """Header for the sentence's MP3, which follows as the next binary frame. Clips arrive in
+    sentence order, each after its sentence."""
 
     type: Literal["clip"] = "clip"
     sentence_id: int
     bytes: int
+
+
+class NoClip(BaseModel):
+    """Every voice failed for this sentence: text only."""
+
+    type: Literal["no_clip"] = "no_clip"
+    sentence_id: int
+
+
+class English(BaseModel):
+    """The sentence's English, which finishes after the Cantonese (shown from weeks 4–5)."""
+
+    type: Literal["english"] = "english"
+    sentence_id: int
+    en: str

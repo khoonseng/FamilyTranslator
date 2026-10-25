@@ -57,6 +57,14 @@ class Translator:
         self.yue_deadline_s = yue_deadline_s
         self.timeout_s = timeout_s
 
+    async def warm_up(self) -> None:
+        for model in self.models:
+            if hasattr(model, "warm_up"):
+                try:
+                    await model.warm_up()
+                except Exception:  # noqa: BLE001 - the first sentence will simply fail over
+                    pass
+
     async def translate(self, text: str, context: list[str]) -> Translation:
         started = perf_counter()
         messages = translation_messages(text, context)

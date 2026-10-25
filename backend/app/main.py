@@ -10,6 +10,7 @@ Run locally: cd backend && uv run uvicorn app.main:app --reload --port 8000
 import asyncio
 import secrets
 import uuid
+from functools import cache
 
 from fastapi import Depends, FastAPI, HTTPException, Security, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -20,6 +21,9 @@ from pydantic import ValidationError
 from app import config
 from app.docs import DOCS_HTML
 from app.logs import log
+from app.pipeline.session import HubSession
+from app.providers import Providers
+from app.providers import build as build_providers
 from app.schemas import Error, Hello, Ready, hub_message
 
 HELLO_TIMEOUT_S = 10
@@ -39,6 +43,12 @@ def _matches(given: str | None, setting: str) -> bool:
     return (
         bool(expected) and bool(given) and secrets.compare_digest(given.encode(), expected.encode())
     )
+
+
+@cache
+def providers() -> Providers:
+    """Built once per server, on the first hub connection (tests replace this)."""
+    return build_providers()
 
 
 def pin_ok(pin: str | None) -> bool:
@@ -95,13 +105,24 @@ async def hub_socket(ws: WebSocket) -> None:
         return
     log("hub_open", conn=conn)
     await ws.send_text(Ready().model_dump_json())
+    session = HubSession(providers(), config.load(), ws.send_text, ws.send_bytes, conn)
+    await session.start()
     try:
         while True:
             message = await ws.receive()
             if message["type"] == "websocket.disconnect":
                 break
-            # The pipeline arrives in step 3; until then the hub just stays connected.
+            if message.get("bytes") is not None:
+                session.on_audio(message["bytes"])
+            elif message.get("text") is not None:
+                try:
+                    parsed = hub_message.validate_json(message["text"])
+                except ValidationError:
+                    await ws.send_text(Error(code="bad_message").model_dump_json())
+                    continue
+                await session.on_message(parsed)
     finally:
+        await session.close()
         log("hub_close", conn=conn)
 
 

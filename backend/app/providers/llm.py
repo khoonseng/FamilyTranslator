@@ -46,6 +46,12 @@ class ChatModel:
             raise RuntimeError(f"{self._auth} is not set")
         return self._client
 
+    async def warm_up(self) -> None:
+        """Fetches the Vertex access token ahead of the first sentence, so it doesn't eat into
+        Gemini's deadline. Costs nothing: no model call."""
+        if self._auth == "google":
+            await self._authed()
+
     async def stream(self, messages: list[dict]) -> AsyncIterator[str]:
         """Yields the reply's text as it streams in, in JSON mode."""
         kwargs = {

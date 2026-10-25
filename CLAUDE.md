@@ -39,8 +39,8 @@ Only two audio channels exist: Cantonese (listeners) and Mandarin (hub speaker).
    phone is the fallback hub. **Guide** latches into continuous listening; client-side VAD splits
    speech at pauses. Family replies (phase 2) come from family phones with the hub PIN
    (push-to-talk or typing); **Family** on the hub stays as an option.
-2. The hub streams audio; Cloud Run keeps one Chirp 3 streaming session in the language set by
-   the mode, with `gpt-transcribe` filling any gaps (hard rule 9).
+2. The hub streams audio; Cloud Run opens one Chirp 3 stream per speech segment in the language
+   set by the mode, with `gpt-transcribe` filling any gaps (hard rule 9).
 3. ONE translation LLM call per sentence returns JSON with the target languages only (`yue`, `en`
    for guide speech; `zh_hans` added for family speech). The source language is the transcript
    itself, never regenerated. The field TTS needs comes first.
@@ -138,12 +138,15 @@ Build order:
 9. Streaming STT with a safety net (decided 2026-10-24). Silence is never sent: Silero VAD runs
    in the browser (`@ricky0123/vad-web`).
    - **Hub:** while Guide is latched, streams speech audio to the server as it is spoken. The VAD
-     holds back long silences but lets about 1 s through after speech ends, so Chirp 3 can
-     notice the pause and finish the sentence.
-   - **Server:** keeps one Chirp 3 streaming session (Guide mode: `cmn-Hans-CN` + `yue-Hant-HK`,
-     glossary hints, "standard" endpointing), renewed at a pause before Google's 5-minute
-     limit. It splits Chirp 3's final transcripts into sentences at punctuation, filters them
-     (rule 8) and translates each one as soon as it is ready.
+     holds back long silences; each segment's audio runs until the VAD has heard the pause that
+     ends it (about 0.6–0.8 s), then the hub sends `segment_end`.
+   - **Server:** one Chirp 3 stream per hub segment (owner decision 2026-10-25), opened at the
+     segment's start and closed at its end, which makes Chirp 3 return the final transcript at
+     once (Guide mode: `cmn-Hans-CN` + `yue-Hant-HK`, glossary hints, "standard" endpointing).
+     A long-lived stream lost a whole 13.8 s segment of real guide speech in 3 of 3 runs; per
+     segment, it came through in full, about 0.5 s sooner. It splits Chirp 3's final
+     transcripts into sentences at punctuation, filters them (rule 8) and translates each one
+     as soon as it is ready; a later segment's sentences wait for the earlier segment's.
    - **Safety net:** the hub's VAD also cuts the audio into segments at pauses (about 0.6–0.8 s,
      capped at 15 s), which the server keeps. When a segment ends, if Chirp 3's final
      transcripts don't reach to within 1 s of its end, the uncovered audio is sent to
@@ -494,3 +497,10 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   so `/docs` stays on in the real app (an empty page that asks for the token and sends it as a
   header). Four secrets in Secret Manager: Groq key, OpenAI key, hub PIN, API token. No limit
   on failed attempts for now (owner decision).
+- 2026-10-25 — One Chirp 3 stream per hub segment, opened at its start and closed at its end
+  (owner decision; hard rule 9 rewritten). In the weeks 2–3 pipeline tests, one long-lived
+  stream lost a whole 13.8 s segment of real guide speech (7-0010) in 3 of 3 runs, reproduced
+  directly against Chirp 3; per segment it came through in full, with final transcripts
+  0.5–1.6 s after the speech ended (about 1.8 s before). The hub sends no extra 1 s of
+  silence: its VAD's own pause detection ends each segment. The safety net stays (6-0008 is
+  still cut short).

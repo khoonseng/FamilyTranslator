@@ -1,9 +1,9 @@
 """Speech-to-text adapters (hard rule 9): Google Chirp 3 streaming, and OpenAI `gpt-transcribe`
 for the safety net and fallback. Streaming only, never the batch endpoint (hard rule 14).
 
-A ChirpStream is one streaming session: the pipeline opens one when the guide starts talking,
-feeds it the hub's PCM as it arrives (about real-time pace, as Google requires), and closes it
-after a pause; it also renews it before Google's 5-minute cap (app/pipeline)."""
+A ChirpStream is one streaming session: the pipeline opens one per hub segment, feeds it the
+hub's PCM as it arrives (about real-time pace, as Google requires), and closes it when the
+segment ends, which makes Chirp 3 return the final transcript at once (app/pipeline)."""
 
 import asyncio
 import io
@@ -42,6 +42,13 @@ class ChirpStream:
         self.audio_s = 0.0  # audio sent so far
         self._closed = False
         self._task = asyncio.create_task(self._run())
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def opened_age_s(self) -> float:
+        return monotonic() - self.opened_at
 
     def send(self, pcm: bytes) -> None:
         if self._closed:

@@ -20,8 +20,7 @@ stt:
     guide_languages: [cmn-Hans-CN, yue-Hant-HK]   # Guide mode (hard rule 8)
     phrase_boost: 10              # glossary phrase biasing strength
     endpointing: standard         # "short" split words and dropped more speech in week 1
-    idle_close_s: 3.0             # close the stream this long after the last audio
-    renew_after_s: 240            # renew at the next pause after this long (Google's cap: 5 min)
+    # One stream per hub segment, closed at the segment's end (decided 2026-10-25).
   openai:
     # Safety net and fallback (hard rule 9).
     model: gpt-transcribe
