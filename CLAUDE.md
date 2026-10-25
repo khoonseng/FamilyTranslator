@@ -175,6 +175,9 @@ Build order:
     Because of this, the hub plays Mandarin replies (phase 2) only after the guide has been quiet
     for 2 s, in order of arrival, and a tap on the hub screen stops a reply and reopens the mic.
     A family phone pauses its own playback while Talk records.
+    MVP-only exception (weeks 2–3, owner-approved 2026-10-25): the single-device hub plays the
+    Cantonese itself, so it has a switch, "Earphones in: keep listening while playing", off by
+    default, that keeps capture on during playback. Remove it once listener phones exist.
 14. Zero data retention (ZDR) at every provider. No provider may keep conversation data, except
     the two Google exceptions below:
     - Google STT: sync (or streaming) requests only. Never call the async/batch endpoint and never
@@ -211,10 +214,11 @@ Decided:
   only in the `us` and `eu` multi-regions, so Singapore would add a Pacific crossing per chunk
   anyway; `us-central1` also keeps the Cloud Storage free allowance. No two-region test.
 
-Proposed defaults (confirm in plan mode before adding):
+Libraries (confirmed 2026-10-25):
 - Python: `uv` for dependencies, `pytest` + `pytest-asyncio`, `ruff`.
-- Frontend: TypeScript, `vite-plugin-pwa`, Pinia for room and player state, `idb` for IndexedDB,
-  `@ricky0123/vad-web` (Silero VAD), Vitest for unit tests. Styling library: ask.
+- Frontend: plain JavaScript (no TypeScript: the owner reads JavaScript), `vite-plugin-pwa`,
+  Pinia for room and player state, `@ricky0123/vad-web` (Silero VAD), Vitest for unit tests,
+  Tailwind CSS for styling. `idb` for IndexedDB joins in weeks 4–5, with replay.
 
 AI providers (all must meet hard rule 14; the week-1 bake-off confirms or promotes a fallback):
 
@@ -474,3 +478,9 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   10% to 30%. Still to confirm with real Cantonese chatter (forwarded family voice messages, or
   at the latest the weeks 6–7 field tests): the threshold, and that Chirp 3 in Guide mode keeps
   chatter recognisably Cantonese (if not, mic placement is the only defence). Week 1 closed.
+- 2026-10-25 — Weeks 2–3 plan approved (single-device MVP, guide → family). Libraries confirmed:
+  uv, pytest + pytest-asyncio, ruff; frontend in plain JavaScript (no TypeScript), Pinia,
+  vite-plugin-pwa, Silero VAD, Vitest, and Tailwind CSS for styling. MVP-only exception to hard
+  rule 13: an "Earphones in" switch keeps capture on while the hub plays Cantonese. The hard
+  rule 9 safety net is built last in weeks 2–3. Rooms, listeners, Cloud Storage and replay
+  follow in weeks 4–5.

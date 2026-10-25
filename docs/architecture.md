@@ -80,7 +80,7 @@ Chirp 3 returns no usable confidence score, so confidence is not part of the fil
 
 **Hub phone rules**
 
-- **Half-duplex:** the hub pauses mic capture while it plays any audio and resumes when playback ends, so it never hears its own Mandarin output as the guide speaking. Browser echo cancellation (`echoCancellation: true`) stays on as a second layer, not as the main defence. Because the mic is muted while a reply plays, replies wait until the guide is quiet, and the guide can tap the screen to stop one (see "Family replies").
+- **Half-duplex:** the hub pauses mic capture while it plays any audio and resumes when playback ends, so it never hears its own Mandarin output as the guide speaking. Browser echo cancellation (`echoCancellation: true`) stays on as a second layer, not as the main defence. Because the mic is muted while a reply plays, replies wait until the guide is quiet, and the guide can tap the screen to stop one (see "Family replies"). Exception for the weeks 2–3 single-device MVP only (decided 25 Oct): the hub plays the Cantonese itself on earphones, and a switch, "Earphones in: keep listening while playing" (off by default), keeps capture on during playback. It goes once listener phones exist.
 - No Bluetooth earbuds connected to the hub phone; the phone may silently switch to their mic.
 - Bring a car charger and power bank: continuous mic, screen wake lock and roaming data drain the battery fast.
 
@@ -417,6 +417,7 @@ The roaming SIM, not the cloud region, is what keeps the app reachable in Chongq
 **Compute: Cloud Run**
 
 - One service holds the Vue PWA, the FastAPI WebSocket endpoint and the pipeline, built as one container.
+- Code stack (libraries confirmed 25 Oct): Python 3.12 with FastAPI, managed with `uv` and tested with `pytest` and `pytest-asyncio`; Vue 3 + Vite in plain JavaScript (no TypeScript), with Pinia, `vite-plugin-pwa`, Silero VAD (`@ricky0123/vad-web`), Tailwind CSS and Vitest.
 - `max-instances=1`, because room state lives in memory and a second instance would split the room.
 - WebSocket connections are cut at the request timeout (60 minutes maximum); the client's reconnect-and-backfill logic handles it.
 - Run at 1 vCPU. Below 1 vCPU, Cloud Run forces maximum concurrency to 1, which would allow only one WebSocket connection.
