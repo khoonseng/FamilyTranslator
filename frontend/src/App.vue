@@ -1,10 +1,14 @@
 <script setup>
-// Placeholder until step 4 builds the hub page (PIN, Guide latch, capture, bubbles, playback).
+import CredentialsScreen from "./components/CredentialsScreen.vue";
+import HubScreen from "./components/HubScreen.vue";
+import StartScreen from "./components/StartScreen.vue";
+import { useHubStore } from "./stores/hub.js";
+
+const hub = useHubStore();
 </script>
 
 <template>
-  <main class="min-h-dvh bg-white p-4 text-slate-900">
-    <h1 class="text-3xl font-bold">重慶翻譯</h1>
-    <p class="mt-2 text-lg text-slate-600">Hub page coming in step 4.</p>
-  </main>
+  <CredentialsScreen v-if="hub.screen === 'credentials'" />
+  <StartScreen v-else-if="hub.screen === 'start'" />
+  <HubScreen v-else />
 </template>
