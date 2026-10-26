@@ -4,7 +4,16 @@ import json
 
 from app import config
 from app.rooms.room import Room
-from app.schemas import BecomeHub, ClipRequest, GuideControl, Mode, SegmentStart, TypedText
+from app.schemas import (
+    BecomeHub,
+    ClipRequest,
+    GuideControl,
+    LinkRequest,
+    Mode,
+    SegmentStart,
+    TypedText,
+)
+from app.storage.store import MemoryStore, RoomStore
 from tests.fakes import FakeStt, fake_providers
 
 
@@ -30,18 +39,31 @@ class Phone:
         return self.of(kind)[-1]
 
 
-async def make_room(hub_offline_s=0.05, **providers):
+async def make_room(hub_offline_s=0.05, store=None, today=None, clips_in_memory=200, **providers):
     cfg = copy.deepcopy(config.load())
     cfg["rooms"]["hub_offline_s"] = hub_offline_s
+    cfg["rooms"]["clips_in_memory"] = clips_in_memory
     cfg["pipeline"]["echo_max_mismatch"] = 0.0  # the fake translator would look like echoes
-    room = Room(fake_providers(**providers), cfg)
+    store = store or RoomStore(MemoryStore())
+    room = Room(fake_providers(**providers), cfg, store, today or (lambda: "2026-12-19"))
     await room.start()
     return room
 
 
-def join(room, role="listener", host=False, last_id=0, phone=None):
+class Closer:
+    def __init__(self):
+        self.closed = False
+
+    async def close(self):
+        self.closed = True
+
+
+def join(room, role="listener", host=False, last_id=0, phone=None, day=None, closer=None):
     phone = phone or Phone()
-    peer = room.join(f"{role}-{id(phone)}", role, host, last_id, phone.send_text, phone.send_bytes)
+    peer = room.join(
+        f"{role}-{id(phone)}", role, host, room.day if day is None else day, last_id,
+        phone.send_text, phone.send_bytes, closer.close if closer else None,
+    )  # fmt: skip
     return peer, phone
 
 
@@ -80,7 +102,9 @@ async def test_a_late_phone_catches_up_from_its_last_sentence():
     await settle()
     _, late = join(room, last_id=1)
     await settle()
-    assert late.messages[0] == {"type": "ready", "role": "listener", "host": False}
+    assert late.messages[0] == {
+        "type": "ready", "role": "listener", "host": False, "day": "2026-12-19", "latest_id": 3,
+    }  # fmt: skip
     assert [m["zh"] for m in late.of("sentence")] == ["第二句话。", "第三句话。"]
     assert [m["sentence_id"] for m in late.of("clip")] == [2, 3]
     assert [m["sentence_id"] for m in late.of("english")] == [2, 3]
@@ -178,3 +202,80 @@ async def test_a_stuck_phone_does_not_delay_the_others():
     await room.handle(hub, TypedText(text="大家跟紧我。"))
     await settle()
     assert [m["zh"] for m in fine.of("sentence")] == ["大家跟紧我。"]
+
+
+# --- storage, days and the join link ------------------------------------------------------------
+
+
+async def test_a_restart_brings_back_the_day_and_carries_on_numbering():
+    store = RoomStore(MemoryStore())
+    room = await make_room(store=store)
+    hub, _ = join(room, "hub", host=True)
+    await room.handle(hub, TypedText(text="第一句话。第二句话。"))
+    await settle()
+    restarted = await make_room(store=store)  # e.g. Cloud Run scaled to zero and back
+    assert list(restarted.history) == [1, 2]
+    assert restarted.join_token == room.join_token
+    hub, _ = join(restarted, "hub", host=True)
+    _, phone = join(restarted)
+    await restarted.handle(hub, TypedText(text="第三句话。"))
+    await settle()
+    assert [m["id"] for m in phone.of("sentence")] == [1, 2, 3]  # catch-up, then live
+    assert phone.of("sentence")[-1]["bubble_id"] == 2  # a new bubble after the restart
+
+
+async def test_catch_up_fetches_older_clips_from_the_bucket():
+    room = await make_room(clips_in_memory=1)
+    hub, _ = join(room, "hub", host=True)
+    await room.handle(hub, TypedText(text="第一句话。第二句话。"))
+    await settle()
+    assert list(room.clips) == [2]  # only the newest stays in memory
+    _, late = join(room)
+    await settle()
+    assert sorted(m["sentence_id"] for m in late.of("clip")) == [1, 2]
+
+
+async def test_a_phone_from_yesterday_gets_today_from_the_start():
+    room = await make_room()
+    hub, _ = join(room, "hub", host=True)
+    await room.handle(hub, TypedText(text="第一句话。第二句话。"))
+    await settle()
+    _, phone = join(room, day="2026-12-18", last_id=5)  # its numbers are yesterday's
+    await settle()
+    assert [m["id"] for m in phone.of("sentence")] == [1, 2]
+
+
+async def test_a_new_day_clears_the_bubbles_and_restarts_numbering():
+    days = iter(["2026-12-19"] * 3 + ["2026-12-20"] * 99)  # start, join, first sentence
+    room = await make_room(today=lambda: next(days))
+    hub, hub_phone = join(room, "hub", host=True)
+    await room.handle(hub, TypedText(text="今天最后一句。"))
+    await settle()
+    await room.handle(hub, TypedText(text="明天第一句话。"))  # after midnight
+    await settle()
+    assert hub_phone.last("day") == {"type": "day", "day": "2026-12-20"}
+    assert hub_phone.last("sentence")["id"] == 1 and list(room.history) == [1]
+
+
+async def test_a_host_can_get_and_renew_the_join_link():
+    room = await make_room()
+    host, host_phone = join(room, host=True)
+    closer = Closer()
+    _, family = join(room, closer=closer)
+    await room.handle(host, LinkRequest())
+    await settle()
+    old = host_phone.last("join_link")["token"]
+    assert old == room.join_token
+    await room.handle(host, LinkRequest(new=True))
+    await settle(0.3)
+    assert host_phone.last("join_link")["token"] == room.join_token != old
+    assert family.last("error")["code"] == "link_changed" and closer.closed
+    assert await room.store.get_json("settings/join.json") == {"token": room.join_token}
+
+
+async def test_only_hosts_can_see_the_join_link():
+    room = await make_room()
+    listener, phone = join(room)
+    await room.handle(listener, LinkRequest(new=True))
+    await settle()
+    assert phone.last("error")["code"] == "not_host" and phone.of("join_link") == []

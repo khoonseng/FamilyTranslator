@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app import config, main
+from app.storage.store import MemoryStore, RoomStore
 from tests.fakes import fake_providers
 
 PIN, TOKEN, ROOM = "24681357", "97531864", "room-k7Q2"
@@ -13,7 +14,8 @@ def client(monkeypatch):
     access = config.load()["access"]
     monkeypatch.setitem(access, "hub_pin", PIN)
     monkeypatch.setitem(access, "api_token", TOKEN)
-    monkeypatch.setitem(access, "room_token", ROOM)
+    monkeypatch.setenv("ROOM_TOKEN", ROOM)  # the join link's token on first start
+    monkeypatch.setattr(main, "store", lambda: RoomStore(MemoryStore()))
     monkeypatch.setattr(main, "providers", fake_providers)  # no network in tests
     monkeypatch.setattr(main, "_room", None)  # a fresh room per test
     return TestClient(main.app)
@@ -38,7 +40,7 @@ def test_docs_page_is_a_shell_and_the_spec_needs_the_token(client):
 
 HUB = {"type": "hello", "role": "hub", "pin": PIN, "token": TOKEN}
 LISTENER = {"type": "hello", "role": "listener", "room": ROOM}
-HOST = {"type": "hello", "role": "listener", "room": ROOM, "pin": PIN, "token": TOKEN}
+HOST = {"type": "hello", "role": "listener", "pin": PIN, "token": TOKEN}  # no join link
 
 
 def first_non_status(ws):
@@ -50,15 +52,17 @@ def first_non_status(ws):
 @pytest.mark.parametrize(
     "hello, ready",
     [
-        (HUB, {"type": "ready", "role": "hub", "host": True}),
-        (LISTENER, {"type": "ready", "role": "listener", "host": False}),
-        (HOST, {"type": "ready", "role": "listener", "host": True}),
+        (HUB, {"role": "hub", "host": True}),
+        (LISTENER, {"role": "listener", "host": False}),
+        (HOST, {"role": "listener", "host": True}),
     ],
 )
 def test_each_role_with_the_right_credentials_is_ready(client, hello, ready):
     with client.websocket_connect("/ws/room") as ws:
         ws.send_json(hello)
-        assert ws.receive_json() == ready
+        message = ws.receive_json()
+        assert message["type"] == "ready"
+        assert {k: message[k] for k in ready} == ready
 
 
 @pytest.mark.parametrize(
@@ -69,6 +73,7 @@ def test_each_role_with_the_right_credentials_is_ready(client, hello, ready):
         {"type": "hello", "role": "hub", "room": ROOM},  # a room token doesn't make a hub
         LISTENER | {"room": "wrong"},
         HOST | {"pin": "wrong"},  # host credentials offered must be right
+        HOST | {"pin": "wrong", "room": ROOM},  # even alongside a good join link
         {"type": "mode", "mode": "guide"},  # anything before hello
     ],
 )
@@ -82,11 +87,10 @@ def test_wrong_credentials_are_refused(client, first):
 
 def test_nothing_configured_lets_nobody_in(client, monkeypatch):
     access = config.load()["access"]
-    for key in ("hub_pin", "api_token", "room_token"):
+    for key in ("hub_pin", "api_token"):
         monkeypatch.setitem(access, key, "")
     assert not main.pin_ok("") and not main.pin_ok(PIN)
     assert not main.token_ok("") and not main.token_ok(TOKEN)
-    assert not main.room_ok("") and not main.room_ok(ROOM)
 
 
 def test_typed_text_reaches_a_listener_with_its_clip(client):

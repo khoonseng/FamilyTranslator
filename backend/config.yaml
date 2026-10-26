@@ -10,11 +10,15 @@ access:
   # token. Both come from Secret Manager on Cloud Run. Empty = nobody gets in.
   hub_pin: ${HUB_PIN}
   api_token: ${API_TOKEN}
-  # Listeners: the token in the family's join link (owner decision 2026-10-26). Changing it
-  # revokes old links.
-  room_token: ${ROOM_TOKEN}
+  # Listeners use the join link's token, kept in the bucket and renewable from host phones
+  # (owner decision 2026-10-26); see app/rooms/room.py.
+
+storage:
+  # Clips, transcripts, usage and the join link; empty = in memory (tests, local runs).
+  bucket: ${CLIP_BUCKET}
 
 rooms:
+  timezone: Asia/Shanghai # the trip-local day; bubbles start fresh each morning
   hub_offline_s: 20       # without a hub this long, listeners show "Hub offline"
   clips_in_memory: 200    # recent clips kept for catch-up; older ones come from Cloud Storage
 

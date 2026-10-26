@@ -115,6 +115,12 @@ class Pipeline:
 
     # --- hub messages -------------------------------------------------------------------------
 
+    def resume(self, next_id: int, next_bubble: int, context: list[str]) -> None:
+        """After a restart: carry on the day's numbering and translation context."""
+        self._next_id = next_id
+        self.bubbles.resume(next_bubble)
+        self._context.extend(context[-self.context_n :])
+
     async def start(self) -> None:
         self._spawn(self.p.translator.warm_up())
 

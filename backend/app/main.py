@@ -27,6 +27,7 @@ from app.providers import Providers
 from app.providers import build as build_providers
 from app.rooms.room import Room
 from app.schemas import Error, Hello, phone_message
+from app.storage.store import GcsStore, MemoryStore, RoomStore
 
 HELLO_TIMEOUT_S = 10
 
@@ -60,13 +61,24 @@ async def room() -> Room:
     """The one fixed room, created on the first connection (tests reset `_room`)."""
     global _room
     if _room is None:
-        _room = Room(providers(), config.load())
+        _room = Room(providers(), config.load(), store())
         await _room.start()
     return _room
 
 
-def room_ok(token: str | None) -> bool:
-    return _matches(token, "room_token")
+@cache
+def store() -> RoomStore:
+    """The private bucket on Cloud Run; in memory when no bucket is set (tests, local runs)."""
+    bucket = config.load()["storage"]["bucket"]
+    return RoomStore(GcsStore(bucket, config.project()) if bucket else MemoryStore())
+
+
+async def room_ok(token: str | None) -> bool:
+    """The join link's token, which host phones can renew (owner decision 2026-10-26)."""
+    expected = (await room()).join_token
+    return (
+        bool(expected) and bool(token) and secrets.compare_digest(token.encode(), expected.encode())
+    )
 
 
 def pin_ok(pin: str | None) -> bool:
@@ -121,8 +133,10 @@ async def room_socket(ws: WebSocket) -> None:
         allowed = False
     elif hello.role == "hub":
         allowed = host
-    else:  # listener: the room token; if host credentials are offered, they must be right
-        allowed = room_ok(hello.room) and (host or not (hello.pin or hello.token))
+    elif hello.pin or hello.token:  # a host listener (signed in through /host): both must be right
+        allowed = host
+    else:  # a family listener: the join link's token
+        allowed = await room_ok(hello.room)
     if not allowed:
         log("room_rejected", conn=conn)
         if ws.client_state.name == "CONNECTED":
@@ -130,7 +144,9 @@ async def room_socket(ws: WebSocket) -> None:
             await ws.close(code=1008)
         return
     the_room = await room()
-    peer = the_room.join(conn, hello.role, host, hello.last_id, ws.send_text, ws.send_bytes)
+    peer = the_room.join(
+        conn, hello.role, host, hello.day, hello.last_id, ws.send_text, ws.send_bytes, ws.close
+    )
     try:
         while True:
             message = await ws.receive()

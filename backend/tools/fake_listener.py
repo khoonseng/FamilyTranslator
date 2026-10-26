@@ -1,7 +1,7 @@
 """Plays a listener phone: joins /ws/room with the room token (and, with --host, the PIN and API
 token) and prints what arrives, with arrival times. For checking fan-out and catch-up.
 
-Credentials (ROOM_TOKEN, and HUB_PIN / API_TOKEN for --host) come from backend/.env. Local
+Credentials (ROOM_TOKEN, or HUB_PIN / API_TOKEN with --host) come from backend/.env. Local
 only: prints text to this terminal, never to logs.
 
 Run: cd backend && uv run python tools/fake_listener.py [--last-id 3] [--host] [--seconds 30]
@@ -23,9 +23,11 @@ ROOT = Path(__file__).resolve().parent.parent
 
 async def run(args) -> None:
     load_dotenv(ROOT / ".env")
-    hello = {"type": "hello", "role": "listener", "room": os.environ["ROOM_TOKEN"]}
-    if args.host:
+    hello = {"type": "hello", "role": "listener"}
+    if args.host:  # a host phone signs in with the PIN and API token, no join link needed
         hello |= {"pin": os.environ["HUB_PIN"], "token": os.environ["API_TOKEN"]}
+    else:
+        hello["room"] = os.environ["ROOM_TOKEN"]
     hello["last_id"] = args.last_id
     start = perf_counter()
     clips = 0

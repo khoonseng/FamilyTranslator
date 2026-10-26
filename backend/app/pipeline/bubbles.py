@@ -14,6 +14,11 @@ class Bubbles:
         self._sentences: dict[int, int] = {}
         self._moved_to: dict[int, int] = {}  # a full bubble -> the one that continues it
 
+    def resume(self, next_bubble: int) -> None:
+        """After a restart: carry on numbering; the next segment starts a new bubble."""
+        self._next = next_bubble
+        self.current = None
+
     def new(self) -> int:
         bubble = self._next
         self._next += 1

@@ -3,6 +3,7 @@
 #
 #   ./deploy.sh            build and deploy (scales to zero; see CLAUDE.md for 15-23 Dec)
 #   ./deploy.sh --secrets  create or update the 4 secrets from backend/.env (asks first)
+#   ./deploy.sh --bucket   create the clip bucket once: private, 30-day delete, no soft delete
 #
 # Only the app's sources are uploaded: the files git tracks or would track under backend/ and
 # frontend/, copied to a temporary folder. .env files, node_modules, bakeoff/ recordings and
@@ -20,10 +21,32 @@ set +a
 SERVICE=chongqing-translator
 REGION=us-central1
 ACCOUNT="$SERVICE@$GCP_PROJECT.iam.gserviceaccount.com"
+# Clips and transcripts, kept 30 days (hard rule 14 exception for our own storage).
+BUCKET="$GCP_PROJECT-cq-clips"
 # Secret Manager name -> environment variable: the Groq and OpenAI keys, the hub PIN and the
 # API token.
 SECRETS=(groq-api-key:GROQ_API_KEY openai-api-key:OPENAI_API_KEY hub-pin:HUB_PIN
   api-token:API_TOKEN)
+
+if [[ "${1:-}" == "--bucket" ]]; then
+  if ! gcloud storage buckets describe "gs://$BUCKET" --project "$GCP_PROJECT" >/dev/null 2>&1; then
+    gcloud storage buckets create "gs://$BUCKET" --project "$GCP_PROJECT" --location "$REGION" \
+      --uniform-bucket-level-access --public-access-prevention --soft-delete-duration=0
+  fi
+  lifecycle=$(mktemp)
+  # Only the day folders expire (clips, transcripts, usage); settings/ holds the join link,
+  # which must outlive 30 days.
+  echo '{"rule": [{"action": {"type": "Delete"},
+    "condition": {"age": 30, "matchesPrefix": ["days/"]}}]}' >"$lifecycle"
+  gcloud storage buckets update "gs://$BUCKET" --project "$GCP_PROJECT" \
+    --lifecycle-file="$lifecycle" --soft-delete-duration=0
+  rm -f "$lifecycle"
+  # The app's service account may read and write objects in this bucket, and nothing else.
+  gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --project "$GCP_PROJECT" \
+    --member "serviceAccount:$ACCOUNT" --role roles/storage.objectAdmin >/dev/null
+  echo "bucket gs://$BUCKET ready"
+  exit 0
+fi
 
 if [[ "${1:-}" == "--secrets" ]]; then
   read -r -p "Create or update ${#SECRETS[@]} secrets in $GCP_PROJECT from backend/.env? [y/N] " ok
@@ -68,5 +91,5 @@ git ls-files -z --cached --others --exclude-standard -- backend frontend Dockerf
 gcloud run deploy "$SERVICE" --source "$stage" --project "$GCP_PROJECT" --region "$REGION" \
   --cpu 1 --memory 512Mi --max-instances 1 --timeout 3600 \
   --service-account "$ACCOUNT" --allow-unauthenticated --quiet \
-  --set-env-vars "GCP_PROJECT=$GCP_PROJECT" \
+  --set-env-vars "GCP_PROJECT=$GCP_PROJECT,CLIP_BUCKET=$BUCKET" \
   --set-secrets "$(IFS=,; echo "${secret_flags[*]}")"

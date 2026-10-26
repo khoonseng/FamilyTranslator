@@ -14,13 +14,15 @@ class Hello(BaseModel):
     - hub: the hub PIN and the API token;
     - listener: the room token from the join link; a host listener (owner, wife) also sends
       the PIN and API token, which unlock the host controls.
-    `last_id` is the last sentence the phone already has, for catch-up."""
+    `day` and `last_id`: the trip-local day the phone's bubbles are from and the last sentence
+    it already has, for catch-up. Sentence numbers restart each day."""
 
     type: Literal["hello"] = "hello"
     role: Literal["hub", "listener"]
     room: str = ""
     pin: str = ""
     token: str = ""
+    day: str = ""
     last_id: int = Field(default=0, ge=0)
 
 
@@ -71,8 +73,24 @@ class BecomeHub(BaseModel):
     type: Literal["become_hub"] = "become_hub"
 
 
+class LinkRequest(BaseModel):
+    """Host listeners only: send me the join link's token; with `new`, make a new one first
+    (the old link stops working and phones still on it are disconnected)."""
+
+    type: Literal["link"] = "link"
+    new: bool = False
+
+
 PhoneMessage = Annotated[
-    Hello | Mode | SegmentStart | SegmentEnd | TypedText | ClipRequest | GuideControl | BecomeHub,
+    Hello
+    | Mode
+    | SegmentStart
+    | SegmentEnd
+    | TypedText
+    | ClipRequest
+    | GuideControl
+    | BecomeHub
+    | LinkRequest,
     Field(discriminator="type"),
 ]
 phone_message = TypeAdapter(PhoneMessage)
@@ -81,11 +99,29 @@ phone_message = TypeAdapter(PhoneMessage)
 
 
 class Ready(BaseModel):
-    """The phone is in. `role` and `host` tell its page what to show."""
+    """The phone is in. `role` and `host` tell its page what to show. `day` is the room's
+    trip-local day; if the phone's bubbles are from another day, it clears them. Sentences up to
+    `latest_id` that follow are catch-up, not live."""
 
     type: Literal["ready"] = "ready"
     role: Literal["hub", "listener"]
     host: bool = False
+    day: str = ""
+    latest_id: int = 0
+
+
+class DayChange(BaseModel):
+    """A new trip-local day started: every phone clears its bubbles; numbering restarts."""
+
+    type: Literal["day"] = "day"
+    day: str
+
+
+class JoinLink(BaseModel):
+    """To host phones: the token for the family's join link, /join/<token>."""
+
+    type: Literal["join_link"] = "join_link"
+    token: str
 
 
 class Role(BaseModel):
