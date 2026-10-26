@@ -10,10 +10,13 @@ import { Segmenter } from "./segmenter.js";
 
 export const REDEMPTION_MS = 700; // the pause that ends a segment (about 0.6-0.8 s)
 
-export async function createCapture({ send, sendAudio }) {
+// `audioContext` must have been created or resumed inside a tap (see the hub store): iOS keeps an
+// AudioContext made later, as the VAD's own would be, suspended, and the VAD hears nothing.
+export async function createCapture({ send, sendAudio, audioContext }) {
   const segmenter = new Segmenter({ send, sendAudio, redemptionMs: REDEMPTION_MS });
   const vad = await MicVAD.new({
     model: "v5",
+    audioContext,
     baseAssetPath: "/vad/",
     onnxWASMBasePath: "/vad/",
     startOnLoad: false,

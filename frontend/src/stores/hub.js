@@ -13,6 +13,17 @@ import { RoomSocket } from "../lib/roomSocket.js";
 let socket = null;
 let capture = null;
 let takeover = false; // true until the first ready after Start
+let audioContext = null;
+
+// The VAD's audio engine. iOS starts an AudioContext suspended unless it is created or resumed
+// inside a tap; the VAD would make its own only after its model loads, long after the Guide
+// tap, and hear nothing (weeks 2–3 got away with it because Start also unlocked the clip
+// player). So Start and Guide make or resume it here, before anything is awaited.
+function wakeAudio() {
+  if (typeof AudioContext === "undefined") return; // tests
+  audioContext ||= new AudioContext();
+  if (audioContext.state !== "running") audioContext.resume().catch(() => {});
+}
 
 // Tests swap in fakes for the socket and the microphone.
 export function setHubParts(parts) {
@@ -59,6 +70,7 @@ export const useHubStore = defineStore("hub", {
 
     // Start, or Become hub on a host phone: this phone takes over as the hub.
     start() {
+      wakeAudio();
       socket?.close();
       takeover = true;
       socket = new RoomSocket({
@@ -112,8 +124,10 @@ export const useHubStore = defineStore("hub", {
       await this.setGuide(!this.listening);
     },
 
+    // A tap on Guide reaches here without an await first, so wakeAudio() still counts as a tap.
     async setGuide(on) {
       this.micError = "";
+      if (on) wakeAudio();
       if (!on) {
         this.listening = false;
         socket.sendJson({ type: "mode", mode: "off" });
@@ -127,6 +141,7 @@ export const useHubStore = defineStore("hub", {
           capture = await createCapture({
             send: (message) => socket.sendJson(message),
             sendAudio: (buffer) => socket.sendAudio(buffer),
+            audioContext,
           });
         }
         await capture.start();
