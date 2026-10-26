@@ -6,7 +6,7 @@ and API token; /openapi.json and every API endpoint need the API token (X-API-To
 ?t=).
 Open: /health, /docs (an empty shell that asks for the token) and the page's own files, also
 served at /join (the join link, /join#<room token>: the phone never sends what follows the #)
-and /listen.
+/listen and /host.
 
 Run locally: cd backend && uv run uvicorn app.main:app --reload --port 8000
 """
@@ -137,6 +137,12 @@ def listen_page() -> FileResponse:
     return _app_page()
 
 
+@app.get("/host", include_in_schema=False)
+def host_page() -> FileResponse:
+    """The owner's and wife's listener page; it signs in with the PIN and API token."""
+    return _app_page()
+
+
 @app.websocket("/ws/room")
 async def room_socket(ws: WebSocket) -> None:
     """Every phone's channel: the hub and every listener. The first message must be `hello`
@@ -166,8 +172,9 @@ async def room_socket(ws: WebSocket) -> None:
         return
     the_room = await room()
     peer = the_room.join(
-        conn, hello.role, host, hello.day, hello.last_id, ws.send_text, ws.send_bytes, ws.close
-    )
+        conn, hello.role, host, hello.day, hello.last_id, ws.send_text, ws.send_bytes, ws.close,
+        takeover=hello.takeover,
+    )  # fmt: skip
     try:
         while True:
             message = await ws.receive()

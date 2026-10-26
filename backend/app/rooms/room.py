@@ -11,7 +11,8 @@
   day: phones clear their bubbles and numbering restarts; earlier days stay in the bucket.
 - Catch-up: a joining phone first gets every sentence after its `last_id` (text, then the clips
   in memory; older clips follow from the bucket), then the live stream.
-- Host controls (remote pause, Become hub, the join link) are refused for other phones.
+- Host controls (remote pause, the join link) are refused for other phones. Become hub on a
+  host phone opens the hub page, which takes over like any hub's Start.
 
 Logs carry connection ids, roles and counts only, never text, audio or tokens (hard rule 14)."""
 
@@ -29,7 +30,6 @@ from pydantic import BaseModel
 from app.logs import log
 from app.pipeline.session import Pipeline
 from app.schemas import (
-    BecomeHub,
     Clip,
     ClipRequest,
     DayChange,
@@ -53,7 +53,7 @@ from app.schemas import (
 from app.usage import Meter
 
 HUB_MESSAGES = (Mode, SegmentStart, SegmentEnd, TypedText)
-HOST_MESSAGES = (GuideControl, BecomeHub, LinkRequest)
+HOST_MESSAGES = (GuideControl, LinkRequest)
 JOIN_LINK = "settings/join.json"
 SPEND_EVERY_S = 10  # how often host phones get a changed estimate, and the counts are saved
 
@@ -124,8 +124,15 @@ class Room:
 
     # --- phones -------------------------------------------------------------------------------
 
-    def join(self, conn, role, host, day, last_id, send_text, send_bytes, close=None) -> Peer:  # noqa: PLR0913
+    def join(  # noqa: PLR0913
+        self, conn, role, host, day, last_id, send_text, send_bytes, close=None, takeover=False
+    ) -> Peer:
+        """`takeover`: a hub's Start or Become hub. Without it (an automatic reconnect), a hub
+        joins as a listener if another phone is the hub now."""
         self._check_day()
+        if role == "hub" and not takeover and self.hub is not None:
+            role = "listener"
+            log("hub_reconnect_declined", conn=conn)
         peer = Peer(conn, "listener", host, send_text, send_bytes, close)
         if day != self.day:
             last_id = 0  # the phone's bubbles are from another day: it clears them
@@ -177,10 +184,7 @@ class Room:
                 peer.put(Error(code="not_host"))
                 log("host_refused", conn=peer.conn)
                 return
-            if isinstance(message, BecomeHub):
-                self._set_hub(peer)
-                peer.put(Role(role="hub", reason="became_hub"))
-            elif isinstance(message, GuideControl):
+            if isinstance(message, GuideControl):
                 self.remote_paused = message.paused
                 if self.hub:
                     self.hub.put(GuideRemote(paused=message.paused))
@@ -221,7 +225,7 @@ class Room:
         old = self.hub
         if old is not None and old is not peer:
             old.role = "listener"
-            old.put(Role(role="listener", reason="replaced"))
+            old.put(Role())
             self._spawn(self._hub_gone(offline_timer=False))
             log("hub_replaced", old=old.conn, new=peer.conn)
         self.hub = peer

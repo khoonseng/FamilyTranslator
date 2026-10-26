@@ -5,7 +5,6 @@ import json
 from app import config
 from app.rooms.room import Room
 from app.schemas import (
-    BecomeHub,
     ClipRequest,
     GuideControl,
     LinkRequest,
@@ -59,11 +58,14 @@ class Closer:
         self.closed = True
 
 
-def join(room, role="listener", host=False, last_id=0, phone=None, day=None, closer=None):
+def join(  # noqa: PLR0913
+    room, role="listener", host=False, last_id=0, phone=None, day=None, closer=None, takeover=True
+):
+    """A hub here taps Start (takeover) unless the test says it is an automatic reconnect."""
     phone = phone or Phone()
     peer = room.join(
         f"{role}-{id(phone)}", role, host, room.day if day is None else day, last_id,
-        phone.send_text, phone.send_bytes, closer.close if closer else None,
+        phone.send_text, phone.send_bytes, closer.close if closer else None, takeover=takeover,
     )  # fmt: skip
     return peer, phone
 
@@ -128,9 +130,8 @@ async def test_host_controls_are_refused_for_ordinary_listeners():
     hub, hub_phone = join(room, "hub", host=True)
     listener, phone = join(room)
     await room.handle(listener, GuideControl(paused=True))
-    await room.handle(listener, BecomeHub())
     await settle()
-    assert [m["code"] for m in phone.of("error")] == ["not_host", "not_host"]
+    assert [m["code"] for m in phone.of("error")] == ["not_host"]
     assert room.hub is hub and room.remote_paused is False
     assert hub_phone.of("guide_remote") == []
 
@@ -154,22 +155,41 @@ async def test_a_host_can_pause_and_resume_guide_remotely():
     }  # fmt: skip
 
 
-async def test_a_host_takes_over_as_hub_mid_speech():
+async def test_a_new_hub_takes_over_mid_speech():
     stt = FakeStt()
     room = await make_room(stt=stt)
     hub, old_phone = join(room, "hub", host=True)
     await room.handle(hub, Mode(mode="guide"))
     await room.handle(hub, SegmentStart(pause_s=3))  # the old hub is mid-segment
-    host, host_phone = join(room, host=True)
-    await room.handle(host, BecomeHub())
+    new, new_phone = join(room, "hub", host=True)  # Become hub on a host phone
     await settle()
-    assert room.hub is host
+    assert room.hub is new
     assert old_phone.last("role") == {"type": "role", "role": "listener", "reason": "replaced"}
-    assert host_phone.last("role") == {"type": "role", "role": "hub", "reason": "became_hub"}
+    assert new_phone.of("role") == []
     assert stt.streams[0].closed  # the old hub's segment was ended
     await room.handle(hub, TypedText(text="我还在吗。"))  # the old hub no longer feeds it
     await settle()
-    assert host_phone.of("sentence") == []
+    assert new_phone.of("sentence") == []
+
+
+async def test_an_old_hub_reconnecting_never_takes_the_hub_back():
+    room = await make_room()
+    old, _ = join(room, "hub", host=True)
+    await room.leave(old)  # a dead zone
+    new, _ = join(room, "hub", host=True)  # meanwhile, Become hub on another phone
+    back, back_phone = join(room, "hub", host=True, takeover=False)  # automatic reconnect
+    await settle()
+    assert room.hub is new and back.role == "listener"
+    assert back_phone.messages[0]["role"] == "listener"
+
+
+async def test_a_hub_reconnecting_with_no_other_hub_carries_on():
+    room = await make_room()
+    old, _ = join(room, "hub", host=True)
+    await room.leave(old)
+    back, back_phone = join(room, "hub", host=True, takeover=False)
+    await settle()
+    assert room.hub is back and back_phone.messages[0]["role"] == "hub"
 
 
 async def test_a_new_hub_signing_in_replaces_the_old_one():

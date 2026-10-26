@@ -58,6 +58,7 @@ async def run(args) -> None:
             "role": "hub",
             "pin": os.environ["HUB_PIN"],
             "token": os.environ["API_TOKEN"],
+            "takeover": True,  # like tapping Start: replaces any current hub
         }
         await ws.send(json.dumps(hello))
         print("server:", await ws.recv())

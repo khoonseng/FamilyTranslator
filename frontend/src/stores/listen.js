@@ -2,6 +2,10 @@
 // status, today's bubbles and the player. The socket, audio elements and cache live outside
 // Vue's reactivity, in this module.
 //
+// Host phones (the owner's and wife's, page /host) are listeners that sign in with the hub PIN
+// and API token instead of the join link (hard rule 1). Only they get the day's spend, the join
+// link (Share link, Make a new link) and remote pause; the server refuses these to anyone else.
+//
 // Which clips auto-play (hard rule 11):
 // - joining fresh (nothing from today on the phone): earlier sentences are history; they show
 //   without unplayed markers and never play by themselves;
@@ -23,6 +27,7 @@ let socket = null;
 let player = null;
 let keeper = null;
 let cache = null;
+let watching = false; // the page's wake-up listeners, added once
 let historyUpTo = 0; // sentences up to here were said before this phone joined today
 let helloLastId = 0; // what this phone said it had in its last hello
 const recent = new Map(); // sentence id -> MP3 bytes
@@ -66,8 +71,13 @@ function holdLockScreen() {
 export const useListenStore = defineStore("listen", {
   state: () => ({
     token: linkToken || stored("roomToken"),
-    screen: "start", // start | room
-    refused: "", // bad_credentials | link_changed: the link no longer works
+    host: false, // the /host page
+    pin: stored("hubPin"), // host phones: the same PIN and token as the hub page
+    apiToken: stored("apiToken"),
+    screen: "start", // credentials (host phones) | start | room
+    refused: "", // bad_credentials | link_changed: the link (or the host's PIN) no longer works
+    spend: null, // host phones: { usd, warn, warnUsd }
+    joinToken: "", // host phones: the family's join link
     connection: "offline", // connecting | connected | offline
     hub: { online: true, listening: false, remotePaused: false },
     day: stored("listenDay"),
@@ -81,9 +91,25 @@ export const useListenStore = defineStore("listen", {
 
   getters: {
     lastId: (s) => Math.max(0, ...Object.keys(s.sentences).map(Number)),
+    joinUrl: (s) => (s.joinToken ? `${location.origin}/join#${s.joinToken}` : ""),
   },
 
   actions: {
+    // Called by the page before anything else: /host signs in with the PIN and token.
+    setHost(host) {
+      this.host = host;
+      if (host && !(this.pin && this.apiToken)) this.screen = "credentials";
+    },
+
+    saveHostCredentials(pin, token) {
+      this.pin = pin.trim();
+      this.apiToken = token.trim();
+      store("hubPin", this.pin);
+      store("apiToken", this.apiToken);
+      this.refused = "";
+      this.screen = "start";
+    },
+
     // Inside the Start tap: unlocks audio on iOS, starts the keep-alive and keeps the screen
     // on (hard rule 12), then shows the phone's own bubbles and connects.
     async start() {
@@ -103,13 +129,15 @@ export const useListenStore = defineStore("listen", {
       player.setSound(this.sound);
       keepScreenOn();
       holdLockScreen();
-      const wake = () => {
-        if (document.visibilityState !== "visible") return;
-        keeper.check();
-        socket?.wake();
-      };
-      document.addEventListener("visibilitychange", wake);
-      window.addEventListener("online", () => socket?.wake());
+      if (!watching) {
+        watching = true;
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState !== "visible") return;
+          keeper.check();
+          socket?.wake();
+        });
+        window.addEventListener("online", () => socket?.wake());
+      }
       this.screen = "room";
 
       cache = await ClipCache.open();
@@ -127,10 +155,12 @@ export const useListenStore = defineStore("listen", {
 
     hello() {
       helloLastId = this.lastId;
-      return { role: "listener", room: this.token, day: this.day, last_id: helloLastId };
+      const access = this.host ? { pin: this.pin, token: this.apiToken } : { room: this.token };
+      return { role: "listener", ...access, day: this.day, last_id: helloLastId };
     },
 
     ready(message) {
+      if (this.host) socket.sendJson({ type: "link" }); // for Share link
       if (message.day !== this.day) this.newDay(message.day);
       historyUpTo = this.lastId ? 0 : message.latest_id;
       // Clips this phone missed when its connection dropped between a sentence and its clip.
@@ -143,9 +173,17 @@ export const useListenStore = defineStore("listen", {
 
     refuse(code) {
       this.refused = code;
-      this.screen = "start";
+      this.screen = this.host ? "credentials" : "start";
       keeper?.stop();
       player?.setSound(false);
+    },
+
+    // Become hub: this page lets go of the room before the hub page takes over.
+    leave() {
+      socket?.close();
+      keeper?.stop();
+      player?.reset();
+      this.screen = "start";
     },
 
     receive(message) {
@@ -177,6 +215,10 @@ export const useListenStore = defineStore("listen", {
         };
       } else if (message.type === "day") {
         this.newDay(message.day);
+      } else if (message.type === "spend") {
+        this.spend = { usd: message.usd, warn: message.warn, warnUsd: message.warn_usd };
+      } else if (message.type === "join_link") {
+        this.joinToken = message.token;
       }
     },
 
@@ -287,6 +329,18 @@ export const useListenStore = defineStore("listen", {
 
     resumeAudio() {
       keeper.resume();
+    },
+
+    // --- host phones ----------------------------------------------------------------------
+
+    setGuidePaused(paused) {
+      socket.sendJson({ type: "guide_control", paused });
+    },
+
+    // The old link stops working at once; family phones on it are disconnected.
+    newJoinLink() {
+      this.joinToken = "";
+      socket.sendJson({ type: "link", new: true });
     },
   },
 });

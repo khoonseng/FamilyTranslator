@@ -30,7 +30,7 @@ def test_health_is_open(client):
 def test_listener_addresses_serve_the_app(client, monkeypatch, tmp_path):
     (tmp_path / "index.html").write_text("<div id=app></div>")
     monkeypatch.setenv("STATIC_DIR", str(tmp_path))
-    for path in ("/join", "/listen"):
+    for path in ("/join", "/listen", "/host"):
         page = client.get(path)
         assert page.status_code == 200
         assert page.text == "<div id=app></div>"

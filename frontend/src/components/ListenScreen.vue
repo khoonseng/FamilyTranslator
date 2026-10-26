@@ -5,6 +5,7 @@
 // Phones and tablets alike: one centred column, with larger text on an iPad.
 import { nextTick, onMounted, watch } from "vue";
 import { useListenStore } from "../stores/listen.js";
+import HostPanel from "./HostPanel.vue";
 
 const listen = useListenStore();
 
@@ -47,6 +48,8 @@ const pill = (on) =>
           class="rounded-lg bg-slate-200 px-3 py-2 text-lg text-slate-800 md:text-xl">
           暫停收聽 · Guide listening paused
         </p>
+
+        <HostPanel v-if="listen.host" />
 
         <div class="flex flex-wrap gap-2 text-base md:text-lg">
           <button class="rounded-full border px-4 py-2 disabled:opacity-40"

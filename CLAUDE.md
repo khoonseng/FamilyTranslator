@@ -56,8 +56,10 @@ Room and hub:
   the family WhatsApp group) and stay joined; no QR code for now (decided 2026-10-26). Host
   phones can share the link and make a new one, which disconnects phones on the old link.
 - One active hub at a time. Any phone that has entered the hub PIN can tap **Become hub** to take
-  over (e.g. the spare phone's battery dies); the old hub drops to listener, and bubble history
-  carries on. If the hub is offline for more than about 20 s, listener phones show "Hub offline".
+  over (e.g. the spare phone's battery dies); the old hub stops listening, and bubble history
+  carries on. Only a deliberate Start or Become hub takes over: a hub's automatic reconnect never
+  takes the role back from a phone that took over meanwhile. If the hub is offline for more than
+  about 20 s, listener phones show "Hub offline".
 
 Build order:
 - **Phase 1 (trip-critical):** guide → family. Mandarin speech or hub typing in; Cantonese audio
@@ -560,3 +562,9 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   token>`). A phone never sends what follows the `#`, so the token stays out of Cloud Run's
   request logs and out of WhatsApp's link-preview fetch; tapping it is unchanged for the family.
   The listener page keeps each day's sentences and clips in IndexedDB with `idb` 8.0.4.
+- 2026-10-26 — Hub takeover only on a deliberate Start or Become hub: the hub's hello says
+  whether it is a takeover, and an automatic reconnect never displaces a phone that took over
+  meanwhile (e.g. the spare phone back from a dead zone); it shows "Another phone is now the
+  hub", with "Listen on this phone" or "Make this phone the hub again". Become hub opens the hub
+  page on the host phone (no separate message). The hub plays no audio and the earphones switch
+  is gone (hard rule 13).

@@ -1,6 +1,6 @@
 <script setup>
-// The single-device hub: the Guide latch tints the whole screen (hard rule 8); bubbles show the
-// Cantonese large and the guide's Mandarin small; clips play in order on earphones.
+// The hub: the Guide latch tints the whole screen (hard rule 8); bubbles show the Cantonese
+// large and the guide's Mandarin small, as text only (the listener phones play the audio).
 import { nextTick, ref, watch } from "vue";
 import { useHubStore } from "../stores/hub.js";
 
@@ -40,10 +40,10 @@ const connectionLabel = {
             :class="hub.connection === 'connected' ? 'bg-emerald-600' : 'bg-amber-500'"></span>
           {{ connectionLabel[hub.connection] }}
         </span>
-        <span v-if="hub.listening && hub.playing && !hub.earphones" class="text-slate-600">
-          Paused while playing
-        </span>
       </div>
+      <p v-if="hub.remotePaused && !hub.listening" class="rounded-lg bg-amber-100 p-3 text-lg text-amber-900">
+        已由另一部手機暫停 · Paused from another phone
+      </p>
 
       <button
         class="rounded-2xl p-6 text-4xl font-bold text-white shadow"
@@ -58,12 +58,6 @@ const connectionLabel = {
           ? "Microphone access was refused. Allow it in Settings › Safari › Microphone."
           : "The microphone could not start." }}
       </p>
-
-      <label class="flex items-center gap-3 text-lg">
-        <input type="checkbox" class="h-6 w-6" :checked="hub.earphones"
-          @change="hub.setEarphones($event.target.checked)" />
-        Earphones in: keep listening while playing
-      </label>
 
       <form class="flex gap-2" @submit.prevent="send">
         <input v-model="typed" type="text" placeholder="输入普通话 Type Mandarin"
@@ -83,13 +77,10 @@ const connectionLabel = {
         class="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm">
         <div v-for="id in bubble.sentenceIds" :key="id" class="flex flex-col gap-1">
           <template v-if="hub.sentences[id].status === 'ok'">
-            <p class="text-3xl leading-snug" :class="hub.sentences[id].played ? 'text-slate-900' : 'text-blue-900'">
-              {{ hub.sentences[id].yue }}
-            </p>
+            <p class="text-3xl leading-snug text-slate-900">{{ hub.sentences[id].yue }}</p>
             <p class="text-base text-slate-500">
               {{ hub.sentences[id].zh }}
-              <span v-if="hub.sentences[id].clip === 'pending'"> · 🔈…</span>
-              <span v-else-if="hub.sentences[id].clip === 'none'"> · no audio</span>
+              <span v-if="hub.sentences[id].clip === 'none'"> · no audio</span>
             </p>
           </template>
           <template v-else>

@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClipCache, memoryBackend } from "../lib/clipCache.js";
 import { setListenParts, useListenStore } from "./listen.js";
 
@@ -46,6 +46,8 @@ beforeEach(() => {
   listen = useListenStore();
   listen.day = "2026-12-19";
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("listener store: joining and catching up", () => {
   it("joining fresh: today's earlier sentences are history, never auto-played", () => {
@@ -140,6 +142,39 @@ describe("listener store: sentences and clips", () => {
   it("no translation: text only, no clip expected", () => {
     listen.receive({ ...sentence(1), yue: "", status: "no_translation" });
     expect(listen.sentences[1].clip).toBe("none");
+  });
+
+  it("a host phone signs in with the PIN and token, never the join link", () => {
+    listen.setHost(true);
+    Object.assign(listen, { pin: "11112222", apiToken: "33334444", token: "family-link" });
+    expect(listen.hello()).toEqual({
+      role: "listener", pin: "11112222", token: "33334444", day: "2026-12-19", last_id: 0,
+    });
+    listen.ready({ day: "2026-12-19", latest_id: 0, host: true });
+    expect(socket.sent).toEqual([{ type: "link" }]); // for Share link
+  });
+
+  it("a host phone without the PIN and token asks for them first", () => {
+    listen.pin = "";
+    listen.setHost(true);
+    expect(listen.screen).toBe("credentials");
+  });
+
+  it("a family phone never asks for the join link or sends a PIN", () => {
+    listen.token = "family-link";
+    expect(listen.hello()).toEqual({
+      role: "listener", room: "family-link", day: "2026-12-19", last_id: 0,
+    });
+    listen.ready({ day: "2026-12-19", latest_id: 0, host: false });
+    expect(socket.sent).toEqual([]);
+  });
+
+  it("a host phone shows the spend and builds the join link with #", () => {
+    vi.stubGlobal("location", { origin: "https://translator.example" });
+    listen.receive({ type: "spend", usd: 13.4, warn: true, warn_usd: 12 });
+    listen.receive({ type: "join_link", token: "abc123" });
+    expect(listen.spend).toEqual({ usd: 13.4, warn: true, warnUsd: 12 });
+    expect(listen.joinUrl).toBe("https://translator.example/join#abc123");
   });
 
   it("hub status is shown as sent", () => {

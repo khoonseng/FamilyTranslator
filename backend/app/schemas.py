@@ -15,7 +15,10 @@ class Hello(BaseModel):
     - listener: the room token from the join link; a host listener (owner, wife) also sends
       the PIN and API token, which unlock the host controls.
     `day` and `last_id`: the trip-local day the phone's bubbles are from and the last sentence
-    it already has, for catch-up. Sentence numbers restart each day."""
+    it already has, for catch-up. Sentence numbers restart each day.
+    `takeover` (hub only): true when someone tapped Start or Become hub, which replaces the
+    current hub; false on an automatic reconnect, which never displaces another phone that took
+    over meanwhile (e.g. while the old hub was in a dead zone): it joins as a listener."""
 
     type: Literal["hello"] = "hello"
     role: Literal["hub", "listener"]
@@ -24,6 +27,7 @@ class Hello(BaseModel):
     token: str = ""
     day: str = ""
     last_id: int = Field(default=0, ge=0)
+    takeover: bool = False
 
 
 class Mode(BaseModel):
@@ -67,12 +71,6 @@ class GuideControl(BaseModel):
     paused: bool
 
 
-class BecomeHub(BaseModel):
-    """Host listeners only: make this phone the hub."""
-
-    type: Literal["become_hub"] = "become_hub"
-
-
 class LinkRequest(BaseModel):
     """Host listeners only: send me the join link's token; with `new`, make a new one first
     (the old link stops working and phones still on it are disconnected)."""
@@ -82,15 +80,7 @@ class LinkRequest(BaseModel):
 
 
 PhoneMessage = Annotated[
-    Hello
-    | Mode
-    | SegmentStart
-    | SegmentEnd
-    | TypedText
-    | ClipRequest
-    | GuideControl
-    | BecomeHub
-    | LinkRequest,
+    Hello | Mode | SegmentStart | SegmentEnd | TypedText | ClipRequest | GuideControl | LinkRequest,
     Field(discriminator="type"),
 ]
 phone_message = TypeAdapter(PhoneMessage)
@@ -99,7 +89,8 @@ phone_message = TypeAdapter(PhoneMessage)
 
 
 class Ready(BaseModel):
-    """The phone is in. `role` and `host` tell its page what to show. `day` is the room's
+    """The phone is in. `role` and `host` tell its page what to show (a hub reconnecting after
+    another phone took over gets `listener`). `day` is the room's
     trip-local day; if the phone's bubbles are from another day, it clears them. Sentences up to
     `latest_id` that follow are catch-up, not live."""
 
@@ -135,11 +126,12 @@ class JoinLink(BaseModel):
 
 
 class Role(BaseModel):
-    """The phone's role changed: another phone took over as hub, or this one became the hub."""
+    """To the old hub: another phone took over as hub (Start on the hub page, or Become hub on a
+    host phone, which opens the hub page), so this one is now a listener."""
 
     type: Literal["role"] = "role"
-    role: Literal["hub", "listener"]
-    reason: Literal["replaced", "became_hub"]
+    role: Literal["listener"] = "listener"
+    reason: Literal["replaced"] = "replaced"
 
 
 class HubStatus(BaseModel):
