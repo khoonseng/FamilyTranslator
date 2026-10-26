@@ -51,7 +51,8 @@ Only two audio channels exist: Cantonese (listeners) and Mandarin (hub speaker).
    to Cloud Storage (30 days) for backfill and replay.
 
 Room and hub:
-- One fixed room. Listeners join by scanning its QR code and stay joined.
+- One fixed room. Listeners join by tapping its link (`…/join/<room token>`, shared in the
+  family WhatsApp group) and stay joined; no QR code for now (decided 2026-10-26).
 - One active hub at a time. Any phone that has entered the hub PIN can tap **Become hub** to take
   over (e.g. the spare phone's battery dies); the old hub drops to listener, and bubble history
   carries on. If the hub is offline for more than about 20 s, listener phones show "Hub offline".
@@ -69,7 +70,11 @@ Build order:
 1. Provider API keys live server-side only (Secret Manager). Phones never call AI providers directly.
    Only a phone that has entered the hub PIN may send audio or text that triggers provider calls:
    the hub, and in phase 2 family phones that talk or type replies. Phones that only listen join
-   with the QR room token and never need the PIN.
+   with the room token in their join link and never need the PIN.
+   - Host controls (owner decision 2026-10-26): the owner's and wife's phones sign in through a
+     separate host link (`/host`) with the PIN and API token, which shows the spend figure,
+     Pause / Resume Guide and Become hub. The family's join link has no host sign-in, and the
+     server refuses those actions from any phone that didn't sign in as host.
    - The hub also sends the API token (owner decision 2026-10-25: both 8 digits, entered once
      per phone). The API token also guards `/openapi.json` and every API endpoint; the `/docs`
      page is an empty shell that asks for it and sends it as an `X-API-Token` header, never in
@@ -94,8 +99,8 @@ Build order:
      translation fallback (rule 4); it authenticates with the service account.
    - STT and TTS adapters are provider-specific (Google and OpenAI APIs differ).
    - Google speech APIs and Gemini on Vertex AI authenticate with the Cloud Run service account
-     (no keys). Secret Manager holds only the Groq and OpenAI keys, the hub PIN and the API
-     token.
+     (no keys). Secret Manager holds only the Groq and OpenAI keys, the hub PIN, the API token
+     and the room token.
    - Model IDs live in config, never hard-coded: Groq's lineup changes within weeks.
    - Reasoning is switched off on the translation LLM, or set to the lowest level the model allows
      (`gpt-oss-120b`: low), as per-provider config. STT and TTS have no reasoning setting. The
@@ -193,9 +198,8 @@ Build order:
     Because of this, the hub plays Mandarin replies (phase 2) only after the guide has been quiet
     for 2 s, in order of arrival, and a tap on the hub screen stops a reply and reopens the mic.
     A family phone pauses its own playback while Talk records.
-    MVP-only exception (weeks 2–3, owner-approved 2026-10-25): the single-device hub plays the
-    Cantonese itself, so it has a switch, "Earphones in: keep listening while playing", off by
-    default, that keeps capture on during playback. Remove it once listener phones exist.
+    The weeks 2–3 MVP-only "Earphones in" switch ends with weeks 4–5: from then on the hub
+    never plays Cantonese, so it never pauses capture in phase 1.
 14. Zero data retention (ZDR) at every provider. No provider may keep conversation data, except
     the two Google exceptions below:
     - Google STT: sync (or streaming) requests only. Never call the async/batch endpoint and never
@@ -530,3 +534,13 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   the family chatter check (now more urgent: layer 2 is weak), a loudness gate with automatic
   gain control off (proposed for the weeks 6–7 field tests), and pausing the hub from another
   PIN phone (could join weeks 4–5). Next: weeks 4–5, in plan mode.
+- 2026-10-26 — Weeks 4–5 plan approved (rooms, listener phones, replay; still phase 1 only).
+  Owner decisions: listeners join with a link carrying a room token (a 5th secret; changing it
+  revokes old links), shared by WhatsApp, link only (no QR for now); host controls (spend
+  figure, Pause / Resume Guide, Become hub) only on phones signed in through `/host` with the
+  PIN and API token, refused by the server for anyone else, with a confirmation before Become
+  hub and Pause; remote pause of the hub's Guide listening from host phones; the spending
+  banner built now. Also settled: catch-up and missing clips travel over the listener's
+  WebSocket (no new web address, so hard rule 1's API-token rule holds); listeners use the
+  link in a Safari tab; a per-device "Sound off (text only)" switch, mainly for tablets in the
+  car; the hub stops playing Cantonese, ending the earphones exception (hard rule 13).
