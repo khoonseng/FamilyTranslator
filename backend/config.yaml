@@ -98,3 +98,16 @@ pipeline:
   bubble_pause_s: 2.0
   bubble_max_audio_s: 45
   bubble_max_sentences: 6
+
+spending:
+  # The spending meter (architecture doc, "App-side spending alert"): an estimate on host phones
+  # only, with a warning above `warn_usd` a day; it never stops translation. Free allowances are
+  # ignored, so the figure errs high. Prices in US$, checked against public pages in October
+  # 2026 unless marked "estimate"; re-check before the trip.
+  warn_usd: 12
+  stt_per_minute: {chirp_3: 0.016, gpt-transcribe: 0.0045}
+  llm_per_million_in: {gemini: 1.50, qwen: 0.30}      # qwen: estimate, check Groq's pricing page
+  llm_per_million_out: {gemini: 7.50, qwen: 0.60}     # qwen: estimate
+  mt_per_million_chars: 20                            # Cloud Translation, estimate
+  tts_per_million_chars: {chirp3_hd: 30, standard: 4} # standard: estimate
+

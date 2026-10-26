@@ -16,6 +16,14 @@ class Attempt:
 
 
 @dataclass
+class TokenUsage:
+    """The last item a chat stream yields: what the reply cost (spending meter)."""
+
+    input: int
+    output: int
+
+
+@dataclass
 class Translation:
     """`yue` is ready as soon as it is complete, so TTS can start; `en` follows (hard rule 3)."""
 

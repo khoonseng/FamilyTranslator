@@ -16,7 +16,7 @@ from collections.abc import AsyncIterator
 from time import perf_counter
 
 from app import config
-from app.providers.base import Attempt, Translation, TranslationFailed, outcome_of
+from app.providers.base import Attempt, TokenUsage, Translation, TranslationFailed, outcome_of
 
 _YUE = re.compile(r'"yue"\s*:\s*"((?:[^"\\]|\\.)*)"')
 _LATIN = re.compile(r"[A-Za-z]")
@@ -44,6 +44,35 @@ def translation_messages(text: str, context: list[str]) -> list[dict]:
     return [{"role": "system", "content": system}, {"role": "user", "content": text}]
 
 
+def _estimate_tokens(messages: list[dict]) -> int:
+    """About three characters per token for this prompt (Vertex counted 995 tokens for a prompt
+    this estimate puts at 983)."""
+    return sum(len(m["content"]) for m in messages) // 3
+
+
+class _Stream:
+    """A chat reply as it streams in: its text so far, and its TokenUsage once it arrives."""
+
+    def __init__(self, pieces: AsyncIterator):
+        self.pieces = pieces
+        self.text = ""
+        self.usage: TokenUsage | None = None
+
+    async def read_until(self, pattern: re.Pattern | None) -> re.Match | None:
+        """Reads until `pattern` matches the text (or, with None, to the end)."""
+        async for piece in self.pieces:
+            if isinstance(piece, TokenUsage):
+                self.usage = piece
+                continue
+            self.text += piece
+            if pattern and (match := pattern.search(self.text)):
+                return match
+        return None
+
+    async def close(self) -> None:
+        await self.pieces.aclose()
+
+
 class _Skip(Exception):
     def __init__(self, outcome: str):
         self.outcome = outcome
@@ -56,6 +85,12 @@ class Translator:
         self.fallback = fallback
         self.yue_deadline_s = yue_deadline_s
         self.timeout_s = timeout_s
+        self.meter = None  # the room's spending meter, if any
+
+    def _bill(self, name: str, usage: TokenUsage) -> bool:
+        if self.meter:
+            self.meter.llm(name, usage.input, usage.output)
+        return True
 
     async def warm_up(self) -> None:
         for model in self.models:
@@ -85,53 +120,57 @@ class Translator:
         return await self._from_fallback(text, started, attempts)
 
     async def _from_llm(self, model, messages: list[dict]) -> tuple[str, asyncio.Task]:
-        reply = ""
-        pieces: AsyncIterator[str] = model.stream(messages)
+        stream = _Stream(model.stream(messages))
+        try:
+            return await self._yue_or_skip(model, stream)
+        except BaseException:
+            if stream.usage is None:  # an abandoned reply still cost its prompt: estimate it
+                self._bill(model.name, TokenUsage(_estimate_tokens(messages), 0))
+            raise
 
-        async def until_yue() -> re.Match | None:
-            nonlocal reply
-            async for piece in pieces:
-                reply += piece
-                if match := _YUE.search(reply):
-                    return match
-            return None
-
+    async def _yue_or_skip(self, model, stream: "_Stream") -> tuple[str, asyncio.Task]:
         limit = self.yue_deadline_s if model.deadline else self.timeout_s
         try:
             async with asyncio.timeout(limit):
-                match = await until_yue()
+                match = await stream.read_until(_YUE)
         except TimeoutError:
-            await pieces.aclose()
+            await stream.close()
             raise _Skip("deadline" if model.deadline else "timeout") from None
         except BaseException:
-            await pieces.aclose()
+            await stream.close()
             raise
+        if stream.usage:
+            self._bill(model.name, stream.usage)
         if match:
             yue = json.loads(f'"{match.group(1)}"').strip()
         else:  # the stream ended without a recognisable "yue": one last look at the whole reply
-            yue = str((parse_json_object(reply) or {}).get("yue", "")).strip()
+            yue = str((parse_json_object(stream.text) or {}).get("yue", "")).strip()
         if not yue:
-            await pieces.aclose()
+            await stream.close()
             raise _Skip("bad_json")
         if _LATIN.search(yue):
-            await pieces.aclose()
+            await stream.close()
             raise _Skip("junk")
-        return yue, asyncio.ensure_future(self._rest_en(pieces, reply))
+        return yue, asyncio.ensure_future(self._rest_en(model.name, stream))
 
-    async def _rest_en(self, pieces: AsyncIterator[str], reply: str) -> str:
+    async def _rest_en(self, name: str, stream: "_Stream") -> str:
         """Reads the rest of the reply for `en`. Never raises: English is a nice-to-have."""
+        billed = stream.usage is not None
         try:
             async with asyncio.timeout(self.timeout_s):
-                async for piece in pieces:
-                    reply += piece
+                await stream.read_until(None)
         except Exception:  # noqa: BLE001
-            await pieces.aclose()
-        return str((parse_json_object(reply) or {}).get("en", "")).strip()
+            await stream.close()
+        if stream.usage and not billed:
+            self._bill(name, stream.usage)
+        return str((parse_json_object(stream.text) or {}).get("en", "")).strip()
 
     async def _from_fallback(
         self, text: str, started: float, attempts: list[Attempt]
     ) -> Translation:
         t0 = perf_counter()
+        if self.meter:
+            self.meter.mt(len(text) * 2)  # two calls: yue and en
         yue_task, en_task = self.fallback.translate(text)
         try:
             yue = (await asyncio.wait_for(yue_task, self.timeout_s)).strip()

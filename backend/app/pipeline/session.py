@@ -93,6 +93,7 @@ class Pipeline:
         self.pipe_cfg = cfg["pipeline"]
         self.context_n = cfg["translation"]["context_sentences"]
         self._publish = publish
+        self.meter = None  # the room's spending meter, if any
         self._send_lock = asyncio.Lock()
         self.conn = conn
         self.mode = "off"
@@ -194,6 +195,8 @@ class Pipeline:
         if live.chirp.error is not None:
             log("stt_error", conn=self.conn, error=type(live.chirp.error).__name__)
         log("stt_closed", conn=self.conn, audio_s=round(live.chirp.audio_s, 1))
+        if self.meter:
+            self.meter.stt(self.stt_cfg["model"], len(live.pcm) / BYTES_PER_SECOND)
         await self._safety_net(live)
         self._hold_or_flush()
 
@@ -211,6 +214,9 @@ class Pipeline:
             return
         t0 = perf_counter()
         try:
+            if self.meter:
+                name = getattr(self.p.transcribe, "name", "gpt-transcribe")
+                self.meter.stt(name, (len(live.pcm) - start) / BYTES_PER_SECOND)
             text = await self.p.transcribe.transcribe(bytes(live.pcm[start:]))
         except Exception as exc:  # noqa: BLE001 - the segment is lost; the guide carries on
             log("safety_net", conn=self.conn, reason=reason, outcome=type(exc).__name__)
@@ -333,6 +339,8 @@ class Pipeline:
             }
             try:
                 speech = await self.p.tts.speak(translation.yue)
+                if self.meter:
+                    self.meter.tts(speech.voice, len(translation.yue))
                 fields |= {"voice": speech.voice, "tts_s": speech.seconds}
             except SpeechFailed:
                 speech = None

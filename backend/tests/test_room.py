@@ -46,6 +46,7 @@ async def make_room(hub_offline_s=0.05, store=None, today=None, clips_in_memory=
     cfg["pipeline"]["echo_max_mismatch"] = 0.0  # the fake translator would look like echoes
     store = store or RoomStore(MemoryStore())
     room = Room(fake_providers(**providers), cfg, store, today or (lambda: "2026-12-19"))
+    room.spend_every_s = 0.02
     await room.start()
     return room
 
@@ -279,3 +280,35 @@ async def test_only_hosts_can_see_the_join_link():
     await room.handle(listener, LinkRequest(new=True))
     await settle()
     assert phone.last("error")["code"] == "not_host" and phone.of("join_link") == []
+
+
+# --- spending ---------------------------------------------------------------------------------
+
+
+async def test_only_host_listeners_see_the_spend_never_the_hub():
+    room = await make_room()
+    hub, hub_phone = join(room, "hub", host=True)  # the hub signs in with the PIN too
+    _, host_phone = join(room, host=True)
+    _, family = join(room)
+    await room.handle(hub, TypedText(text="我们在门口集合。"))
+    await settle(0.1)
+    spend = host_phone.last("spend")
+    assert spend["usd"] >= 0 and spend["warn"] is False and spend["warn_usd"] == 12
+    assert hub_phone.of("spend") == [] and family.of("spend") == []
+
+
+async def test_spend_warns_above_the_threshold():
+    room = await make_room()
+    _, host_phone = join(room, host=True)
+    room.meter.tts("yue-HK-Chirp3-HD-Despina", 500_000)  # US$15
+    await settle(0.1)
+    assert host_phone.last("spend") == {"type": "spend", "usd": 15.0, "warn": True, "warn_usd": 12}
+
+
+async def test_the_days_usage_survives_a_restart():
+    store = RoomStore(MemoryStore())
+    room = await make_room(store=store)
+    room.meter.tts("yue-HK-Chirp3-HD-Despina", 100_000)
+    await settle(0.1)
+    restarted = await make_room(store=store)
+    assert restarted.meter.to_dict() == {"tts": {"yue-HK-Chirp3-HD-Despina": 100_000}}

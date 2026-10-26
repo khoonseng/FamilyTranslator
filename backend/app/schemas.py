@@ -117,6 +117,16 @@ class DayChange(BaseModel):
     day: str
 
 
+class Spend(BaseModel):
+    """To host listeners only: today's estimated cost; `warn` above the daily threshold. The
+    hub (the guide's screen) never gets it, and it never stops translation."""
+
+    type: Literal["spend"] = "spend"
+    usd: float
+    warn: bool
+    warn_usd: float
+
+
 class JoinLink(BaseModel):
     """To host phones: the token for the family's join link, /join/<token>."""
 

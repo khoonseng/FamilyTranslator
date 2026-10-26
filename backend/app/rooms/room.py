@@ -47,12 +47,15 @@ from app.schemas import (
     SegmentEnd,
     SegmentStart,
     Sentence,
+    Spend,
     TypedText,
 )
+from app.usage import Meter
 
 HUB_MESSAGES = (Mode, SegmentStart, SegmentEnd, TypedText)
 HOST_MESSAGES = (GuideControl, BecomeHub, LinkRequest)
 JOIN_LINK = "settings/join.json"
+SPEND_EVERY_S = 10  # how often host phones get a changed estimate, and the counts are saved
 
 
 @dataclass(eq=False)
@@ -82,6 +85,9 @@ class Room:
         zone = ZoneInfo(self.cfg["timezone"])
         self.today = today or (lambda: datetime.now(zone).date().isoformat())
         self.day = self.today()
+        self.prices = cfg["spending"]
+        self.meter = Meter()
+        self.spend_every_s = SPEND_EVERY_S
         self.pipeline = self._new_pipeline()
         self.peers: set[Peer] = set()
         self.hub: Peer | None = None
@@ -111,7 +117,9 @@ class Room:
                 next_bubble=max(r["bubble_id"] for r in records) + 1,
                 context=[r["zh"] for r in records],
             )
+        self._use_meter(Meter(await self.store.get_json(self._usage_name())))
         log("room_start", sentences=len(records))
+        self._spawn(self._spend_loop())
         await self.pipeline.start()
 
     # --- phones -------------------------------------------------------------------------------
@@ -137,6 +145,8 @@ class Room:
             self._set_hub(peer)
         else:
             peer.put(self._status())
+            if host:
+                peer.put(self._spend())
         log("room_join", conn=conn, role=role, host=host, phones=len(self.peers))
         return peer
 
@@ -258,10 +268,46 @@ class Room:
         self.day = today
         self.history.clear()
         self.clips.clear()
+        self._spawn(self._save_usage(self._usage_name(), self.meter))
         self.pipeline = self._new_pipeline()
+        self._use_meter(Meter())
         self._spawn(self.pipeline.start())
         self._broadcast(DayChange(day=today))
         log("day_change")
+
+    # --- spending -----------------------------------------------------------------------------
+
+    def _use_meter(self, meter: Meter) -> None:
+        self.meter = meter
+        self.pipeline.meter = meter
+        self.providers.translator.meter = meter
+
+    def _usage_name(self) -> str:
+        return f"days/{self.day}/usage.json"
+
+    def _spend(self) -> Spend:
+        usd = round(self.meter.cost(self.prices), 2)
+        warn_usd = self.prices["warn_usd"]
+        return Spend(usd=usd, warn=usd > warn_usd, warn_usd=warn_usd)
+
+    async def _spend_loop(self) -> None:
+        """While usage changes: tell host listeners (never the hub) and save the counts."""
+        while True:
+            await asyncio.sleep(self.spend_every_s)
+            if not self.meter.changed:
+                continue
+            self.meter.changed = False
+            spend = self._spend()
+            for peer in self.peers:
+                if peer.host and peer.role == "listener":
+                    peer.put(spend)
+            await self._save_usage(self._usage_name(), self.meter)
+
+    async def _save_usage(self, name: str, meter: Meter) -> None:
+        try:
+            await self.store.put_json(name, meter.to_dict())
+        except Exception as exc:  # noqa: BLE001
+            log("store_error", what="usage", error=type(exc).__name__)
 
     # --- sentences ----------------------------------------------------------------------------
 

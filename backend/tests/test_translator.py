@@ -4,8 +4,9 @@ from time import perf_counter
 
 import pytest
 
-from app.providers.base import TranslationFailed, outcome_of
+from app.providers.base import TokenUsage, TranslationFailed, outcome_of
 from app.providers.translator import Translator, translation_messages
+from app.usage import Meter
 
 YUE, EN = "洪崖洞夜晚七點半之後會開燈。", "Hongyadong's lights come on after 7:30 pm."
 
@@ -36,6 +37,7 @@ class FakeModel:
             await asyncio.sleep(self.en_delay)
             if tail:
                 yield tail
+            yield TokenUsage(1200, 80)  # the stream's usage comes last
         finally:
             self.closed = True
 
@@ -168,3 +170,24 @@ def test_no_context_says_none():
 )
 def test_outcome_labels(exc, outcome):
     assert outcome_of(exc) == outcome
+
+
+async def test_the_meter_counts_tokens_from_the_reply():
+    t = translator(FakeModel("gemini", deadline=True))
+    t.meter = Meter()
+    result = await t.translate("...", [])
+    await result.en
+    assert t.meter.to_dict() == {"llm_in": {"gemini": 1200}, "llm_out": {"gemini": 80}}
+
+
+async def test_an_abandoned_reply_is_billed_for_its_prompt_and_cloud_translation_by_characters():
+    t = translator(
+        FakeModel("gemini", deadline=True, delay=0.5),
+        FakeModel("qwen", error=RuntimeError("down")),
+        deadline=0.05,
+    )
+    t.meter = Meter()
+    await t.translate("我们到了。", [])
+    counts = t.meter.to_dict()
+    assert 800 < counts["llm_in"]["gemini"] < 1200  # estimated from the prompt's length
+    assert counts["mt"] == {"cloud-translate": 2 * len("我们到了。")}

@@ -12,6 +12,8 @@ import google.auth
 import google.auth.transport.requests
 from openai import AsyncOpenAI
 
+from app.providers.base import TokenUsage
+
 _GOOGLE_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
 
@@ -52,14 +54,15 @@ class ChatModel:
         if self._auth == "google":
             await self._authed()
 
-    async def stream(self, messages: list[dict]) -> AsyncIterator[str]:
-        """Yields the reply's text as it streams in, in JSON mode."""
+    async def stream(self, messages: list[dict]) -> AsyncIterator[str | TokenUsage]:
+        """Yields the reply's text as it streams in, in JSON mode, then its TokenUsage."""
         kwargs = {
             "model": self.model,
             "messages": messages,
             "extra_body": self.params,
             "response_format": {"type": "json_object"},
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
@@ -69,3 +72,5 @@ class ChatModel:
             for choice in chunk.choices:
                 if choice.delta and choice.delta.content:
                     yield choice.delta.content
+            if chunk.usage:
+                yield TokenUsage(chunk.usage.prompt_tokens or 0, chunk.usage.completion_tokens or 0)
