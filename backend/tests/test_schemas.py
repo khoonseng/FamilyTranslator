@@ -1,16 +1,17 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import Hello, Mode, SegmentStart, TypedText, hub_message
+from app.schemas import Hello, Mode, SegmentStart, TypedText, phone_message
 
 
-def test_hub_messages_parse_by_type():
+def test_phone_messages_parse_by_type():
     assert isinstance(
-        hub_message.validate_json('{"type": "hello", "pin": "1", "token": "2"}'), Hello
+        phone_message.validate_json('{"type": "hello", "role": "hub", "pin": "1", "token": "2"}'),
+        Hello,
     )
-    assert hub_message.validate_json('{"type": "mode", "mode": "guide"}') == Mode(mode="guide")
-    assert hub_message.validate_json('{"type": "segment_start", "pause_s": 2.4}').pause_s == 2.4
-    assert hub_message.validate_json('{"type": "text", "text": "你好"}') == TypedText(text="你好")
+    assert phone_message.validate_json('{"type": "mode", "mode": "guide"}') == Mode(mode="guide")
+    assert phone_message.validate_json('{"type": "segment_start", "pause_s": 2.4}').pause_s == 2.4
+    assert phone_message.validate_json('{"type": "text", "text": "你好"}') == TypedText(text="你好")
 
 
 @pytest.mark.parametrize(
@@ -22,9 +23,9 @@ def test_hub_messages_parse_by_type():
         '{"type": "unknown"}',
     ],
 )
-def test_bad_hub_messages_are_rejected(raw):
+def test_bad_phone_messages_are_rejected(raw):
     with pytest.raises(ValidationError):
-        hub_message.validate_json(raw)
+        phone_message.validate_json(raw)
 
 
 def test_segment_start_pause_is_required():

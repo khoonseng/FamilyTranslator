@@ -10,6 +10,13 @@ access:
   # token. Both come from Secret Manager on Cloud Run. Empty = nobody gets in.
   hub_pin: ${HUB_PIN}
   api_token: ${API_TOKEN}
+  # Listeners: the token in the family's join link (owner decision 2026-10-26). Changing it
+  # revokes old links.
+  room_token: ${ROOM_TOKEN}
+
+rooms:
+  hub_offline_s: 20       # without a hub this long, listeners show "Hub offline"
+  clips_in_memory: 200    # recent clips kept for catch-up; older ones come from Cloud Storage
 
 stt:
   google:
@@ -77,13 +84,13 @@ pipeline:
   # Layer 3: very short sentences and filler.
   min_chars: 2
   filler: [嗯, 啊, 对, 對, 哦, 呃, 那个, 這個, 这个]
-  # Bubbles (hard rule 9): a new one after a pause longer than this, or at these caps.
   # A sentence cut off by a pause waits this long for the guide to carry on (2026-10-25).
   hold_s: 1.5
   # Layer 4, echo detection (2026-10-25): drop a guide sentence that nearly matches one of our
   # translations from the last `echo_window_s` (mismatch below `echo_max_mismatch`).
   echo_window_s: 60
   echo_max_mismatch: 0.6
+  # Bubbles (hard rule 9): a new one after a pause longer than this, or at these caps.
   bubble_pause_s: 2.0
   bubble_max_audio_s: 45
   bubble_max_sentences: 6

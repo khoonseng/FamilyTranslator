@@ -3,7 +3,7 @@ import copy
 import json
 
 from app import config
-from app.pipeline.session import HubSession
+from app.pipeline.session import Pipeline
 from app.schemas import Mode, SegmentEnd, SegmentStart, TypedText
 from tests.fakes import FakeStt, FakeTranscribe, FakeTranslator, FakeTts, fake_providers
 
@@ -16,11 +16,10 @@ class Hub:
     def __init__(self):
         self.messages: list = []
 
-    async def json(self, text):
-        self.messages.append(json.loads(text))
-
-    async def bytes(self, data):
-        self.messages.append(data)
+    async def publish(self, message, audio):
+        self.messages.append(json.loads(message.model_dump_json()))
+        if audio is not None:
+            self.messages.append(audio)
 
     def of(self, kind):
         return [m for m in self.messages if isinstance(m, dict) and m["type"] == kind]
@@ -33,7 +32,7 @@ def make(providers=None, echo=0.0, hold_s=0.05):
     cfg = copy.deepcopy(config.load())
     cfg["pipeline"]["echo_max_mismatch"] = echo
     cfg["pipeline"]["hold_s"] = hold_s
-    session = HubSession(providers or fake_providers(), cfg, hub.json, hub.bytes, "test")
+    session = Pipeline(providers or fake_providers(), cfg, hub.publish, "test")
     return session, hub
 
 

@@ -14,11 +14,12 @@ export class HubSocket {
   connect() {
     this.stopped = false;
     const scheme = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${scheme}://${location.host}/ws/hub`);
+    const ws = new WebSocket(`${scheme}://${location.host}/ws/room`);
     ws.binaryType = "arraybuffer";
     this.ws = ws;
     this.onStatus("connecting");
-    ws.onopen = () => ws.send(JSON.stringify({ type: "hello", pin: this.pin, token: this.token }));
+    ws.onopen = () =>
+      ws.send(JSON.stringify({ type: "hello", role: "hub", pin: this.pin, token: this.token }));
     ws.onmessage = (event) => {
       if (typeof event.data !== "string") {
         if (this.pendingClip !== null) this.onClip(this.pendingClip, event.data);

@@ -1,4 +1,4 @@
-"""Plays the hub: streams 16 kHz mono WAV files to /ws/hub at speaking pace, as the phone will,
+"""Plays the hub: streams 16 kHz mono WAV files to /ws/room at speaking pace, as the phone will,
 and prints what comes back with timings. Each file is one or more segments (cut at 15 s, like
 the hub's VAD), followed by 0.7 s of silence (the VAD's pause detection); between files
 nothing is sent for `--pause` seconds, as the VAD holds back silence. MP3 clips are saved to
@@ -8,7 +8,7 @@ Credentials (HUB_PIN, API_TOKEN) come from backend/.env. Local only: prints text
 terminal, never to logs.
 
 Run: cd backend && uv run python tools/fake_hub.py <wav> [<wav> ...]
-     [--url wss://chongqing-translator-....run.app/ws/hub] [--pause 2.5] [--out tools/out]
+     [--url wss://chongqing-translator-....run.app/ws/room] [--pause 2.5] [--out tools/out]
      [--text "我们在门口集合。"]
 """
 
@@ -53,7 +53,12 @@ async def run(args) -> None:
     zh_of: dict[int, str] = {}
 
     async with websockets.connect(args.url, max_size=None) as ws:
-        hello = {"type": "hello", "pin": os.environ["HUB_PIN"], "token": os.environ["API_TOKEN"]}
+        hello = {
+            "type": "hello",
+            "role": "hub",
+            "pin": os.environ["HUB_PIN"],
+            "token": os.environ["API_TOKEN"],
+        }
         await ws.send(json.dumps(hello))
         print("server:", await ws.recv())
 
@@ -112,7 +117,7 @@ async def run(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("wavs", nargs="*")
-    parser.add_argument("--url", default="ws://localhost:8000/ws/hub")
+    parser.add_argument("--url", default="ws://localhost:8000/ws/room")
     parser.add_argument("--pause", type=float, default=2.5, help="seconds between files")
     parser.add_argument("--text", help="also send this typed Mandarin")
     parser.add_argument("--wait", type=float, default=8.0, help="seconds to wait at the end")

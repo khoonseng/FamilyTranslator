@@ -5,7 +5,7 @@ from starlette.websockets import WebSocketDisconnect
 from app import config, main
 from tests.fakes import fake_providers
 
-PIN, TOKEN = "24681357", "97531864"
+PIN, TOKEN, ROOM = "24681357", "97531864", "room-k7Q2"
 
 
 @pytest.fixture
@@ -13,7 +13,9 @@ def client(monkeypatch):
     access = config.load()["access"]
     monkeypatch.setitem(access, "hub_pin", PIN)
     monkeypatch.setitem(access, "api_token", TOKEN)
+    monkeypatch.setitem(access, "room_token", ROOM)
     monkeypatch.setattr(main, "providers", fake_providers)  # no network in tests
+    monkeypatch.setattr(main, "_room", None)  # a fresh room per test
     return TestClient(main.app)
 
 
@@ -26,7 +28,7 @@ def test_health_is_open(client):
 def test_docs_page_is_a_shell_and_the_spec_needs_the_token(client):
     page = client.get("/docs")
     assert page.status_code == 200
-    assert "X-API-Token" in page.text and "/ws/hub" not in page.text
+    assert "X-API-Token" in page.text and "/ws/room" not in page.text
     assert client.get("/openapi.json").status_code == 401
     assert client.get("/openapi.json", headers={"X-API-Token": "wrong"}).status_code == 401
     spec = client.get("/openapi.json", headers={"X-API-Token": TOKEN})
@@ -34,23 +36,44 @@ def test_docs_page_is_a_shell_and_the_spec_needs_the_token(client):
     assert "/health" in spec.json()["paths"]
 
 
-def test_hub_with_pin_and_token_is_ready(client):
-    with client.websocket_connect("/ws/hub") as ws:
-        ws.send_json({"type": "hello", "pin": PIN, "token": TOKEN})
-        assert ws.receive_json() == {"type": "ready"}
+HUB = {"type": "hello", "role": "hub", "pin": PIN, "token": TOKEN}
+LISTENER = {"type": "hello", "role": "listener", "room": ROOM}
+HOST = {"type": "hello", "role": "listener", "room": ROOM, "pin": PIN, "token": TOKEN}
+
+
+def first_non_status(ws):
+    while (message := ws.receive_json())["type"] == "hub_status":
+        pass
+    return message
+
+
+@pytest.mark.parametrize(
+    "hello, ready",
+    [
+        (HUB, {"type": "ready", "role": "hub", "host": True}),
+        (LISTENER, {"type": "ready", "role": "listener", "host": False}),
+        (HOST, {"type": "ready", "role": "listener", "host": True}),
+    ],
+)
+def test_each_role_with_the_right_credentials_is_ready(client, hello, ready):
+    with client.websocket_connect("/ws/room") as ws:
+        ws.send_json(hello)
+        assert ws.receive_json() == ready
 
 
 @pytest.mark.parametrize(
     "first",
     [
-        {"type": "hello", "pin": PIN, "token": "wrong"},
-        {"type": "hello", "pin": "wrong", "token": TOKEN},
-        {"type": "hello", "pin": PIN},  # no token
+        HUB | {"token": "wrong"},
+        HUB | {"pin": "wrong"},
+        {"type": "hello", "role": "hub", "room": ROOM},  # a room token doesn't make a hub
+        LISTENER | {"room": "wrong"},
+        HOST | {"pin": "wrong"},  # host credentials offered must be right
         {"type": "mode", "mode": "guide"},  # anything before hello
     ],
 )
-def test_hub_without_both_credentials_is_closed(client, first):
-    with client.websocket_connect("/ws/hub") as ws:
+def test_wrong_credentials_are_refused(client, first):
+    with client.websocket_connect("/ws/room") as ws:
         ws.send_json(first)
         assert ws.receive_json()["code"] == "bad_credentials"
         with pytest.raises(WebSocketDisconnect):
@@ -59,29 +82,32 @@ def test_hub_without_both_credentials_is_closed(client, first):
 
 def test_nothing_configured_lets_nobody_in(client, monkeypatch):
     access = config.load()["access"]
-    monkeypatch.setitem(access, "hub_pin", "")
-    monkeypatch.setitem(access, "api_token", "")
+    for key in ("hub_pin", "api_token", "room_token"):
+        monkeypatch.setitem(access, key, "")
     assert not main.pin_ok("") and not main.pin_ok(PIN)
     assert not main.token_ok("") and not main.token_ok(TOKEN)
+    assert not main.room_ok("") and not main.room_ok(ROOM)
 
 
-def test_typed_text_comes_back_translated_with_its_clip(client):
-    with client.websocket_connect("/ws/hub") as ws:
-        ws.send_json({"type": "hello", "pin": PIN, "token": TOKEN})
-        assert ws.receive_json() == {"type": "ready"}
-        ws.send_json({"type": "text", "text": "我们在门口集合。"})
-        sentence = ws.receive_json()
+def test_typed_text_reaches_a_listener_with_its_clip(client):
+    with client.websocket_connect("/ws/room") as hub, client.websocket_connect("/ws/room") as ear:
+        hub.send_json(HUB)
+        assert hub.receive_json()["role"] == "hub"
+        ear.send_json(LISTENER)
+        assert ear.receive_json()["role"] == "listener"
+        hub.send_json({"type": "text", "text": "我们在门口集合。"})
+        sentence = first_non_status(ear)
         assert (sentence["type"], sentence["yue"]) == ("sentence", "粵:我们在门口集合。")
-        clip = ws.receive_json()
+        clip = ear.receive_json()
         assert clip["type"] == "clip"
-        assert len(ws.receive_bytes()) == clip["bytes"]
+        assert len(ear.receive_bytes()) == clip["bytes"]
 
 
 def test_bad_message_is_reported_not_fatal(client):
-    with client.websocket_connect("/ws/hub") as ws:
-        ws.send_json({"type": "hello", "pin": PIN, "token": TOKEN})
+    with client.websocket_connect("/ws/room") as ws:
+        ws.send_json(HUB)
         ws.receive_json()
-        ws.send_json({"type": "mode", "mode": "family"})  # phase 2, not in the MVP
-        assert ws.receive_json()["code"] == "bad_message"
-        ws.send_json({"type": "text", "text": "好。"})
-        assert ws.receive_json()["type"] == "sentence"
+        ws.send_json({"type": "mode", "mode": "family"})  # phase 2, not built yet
+        assert first_non_status(ws)["code"] == "bad_message"
+        ws.send_json({"type": "text", "text": "好的我们走吧。"})
+        assert first_non_status(ws)["type"] == "sentence"

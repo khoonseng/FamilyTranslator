@@ -1,4 +1,5 @@
-"""One hub connection's pipeline (hard rules 8 and 9).
+"""The room's pipeline (hard rules 8 and 9). It belongs to the room, not to a hub connection,
+so a hub reconnect or takeover carries on with the same bubbles, numbering and context.
 
 Audio: the hub's VAD sends `segment_start`, PCM frames (speech plus its own pause detection,
 about 0.6-0.8 s), then `segment_end`. Each segment gets its own Chirp 3 stream, opened at its
@@ -26,6 +27,8 @@ from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from time import perf_counter
+
+from pydantic import BaseModel
 
 from app.logs import log
 from app.pipeline.bubbles import Bubbles
@@ -74,21 +77,22 @@ def _done() -> asyncio.Future:
     return future
 
 
-class HubSession:
+class Pipeline:
     def __init__(
         self,
         providers,
         cfg: dict,
-        send_json: Callable[[str], Awaitable[None]],
-        send_bytes: Callable[[bytes], Awaitable[None]],
+        publish: Callable[[BaseModel, bytes | None], Awaitable[None]],
         conn: str = "",
     ):
+        """publish(message, audio): every message the pipeline produces, with the MP3 for a
+        `clip` header. The room stores it and sends it to every phone."""
         self.p = providers
         self.stt_cfg = cfg["stt"]["google"]
         self.net_cfg = cfg["stt"]["safety_net"]
         self.pipe_cfg = cfg["pipeline"]
         self.context_n = cfg["translation"]["context_sentences"]
-        self._send_json, self._send_bytes = send_json, send_bytes
+        self._publish = publish
         self._send_lock = asyncio.Lock()
         self.conn = conn
         self.mode = "off"
@@ -308,7 +312,7 @@ class HubSession:
                         yue=translation.yue if translation else "",
                         status="ok" if translation else "no_translation",
                         provider=translation.provider if translation else "",
-                    ).model_dump_json()
+                    )
                 )
             finally:
                 text_mine.set_result(None)
@@ -331,18 +335,17 @@ class HubSession:
             try:
                 if speech:
                     await self._send(
-                        Clip(sentence_id=sentence_id, bytes=len(speech.audio)).model_dump_json(),
-                        speech.audio,
+                        Clip(sentence_id=sentence_id, bytes=len(speech.audio)), speech.audio
                     )
                 else:
-                    await self._send(NoClip(sentence_id=sentence_id).model_dump_json())
+                    await self._send(NoClip(sentence_id=sentence_id))
             finally:
                 clip_mine.set_result(None)
             fields["total_s"] = round(perf_counter() - started, 3)
             fields.setdefault("outcome", "ok")
             en = await translation.en
             if en:
-                await self._send(English(sentence_id=sentence_id, en=en).model_dump_json())
+                await self._send(English(sentence_id=sentence_id, en=en))
         finally:
             # Never leave later sentences waiting on this one.
             for future in (text_mine, clip_mine):
@@ -350,17 +353,15 @@ class HubSession:
                     future.set_result(None)
             log("sentence", **fields)
 
-    async def _send(self, text: str, audio: bytes | None = None) -> None:
-        """A JSON message, and for clips the MP3 right after it, never interleaved."""
+    async def _send(self, message: BaseModel, audio: bytes | None = None) -> None:
+        """One message at a time, so a clip's header and its MP3 are never interleaved."""
         if self.closed:
             return
         async with self._send_lock:
             try:
-                await self._send_json(text)
-                if audio is not None:
-                    await self._send_bytes(audio)
-            except Exception:  # noqa: BLE001 - the hub went away; the session is closing
-                self.closed = True
+                await self._publish(message, audio)
+            except Exception as exc:  # noqa: BLE001 - keep the pipeline running
+                log("publish_error", conn=self.conn, error=type(exc).__name__)
 
     def _spawn(self, coro) -> asyncio.Task:
         task = asyncio.create_task(coro)
