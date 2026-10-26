@@ -27,6 +27,21 @@ def test_health_is_open(client):
     assert response.text == "ok"
 
 
+def test_listener_addresses_serve_the_app(client, monkeypatch, tmp_path):
+    (tmp_path / "index.html").write_text("<div id=app></div>")
+    monkeypatch.setenv("STATIC_DIR", str(tmp_path))
+    for path in ("/join", "/listen"):
+        page = client.get(path)
+        assert page.status_code == 200
+        assert page.text == "<div id=app></div>"
+        assert page.headers["cache-control"] == "no-cache"
+
+
+def test_listener_addresses_without_a_built_app_are_not_found(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("STATIC_DIR", str(tmp_path))
+    assert client.get("/listen").status_code == 404
+
+
 def test_docs_page_is_a_shell_and_the_spec_needs_the_token(client):
     page = client.get("/docs")
     assert page.status_code == 200

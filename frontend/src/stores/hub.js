@@ -3,37 +3,12 @@
 
 import { defineStore } from "pinia";
 import { ClipPlayer } from "../audio/player.js";
-import { HubSocket } from "../lib/hubSocket.js";
+import { keepScreenOn, store, stored } from "../lib/device.js";
+import { RoomSocket } from "../lib/roomSocket.js";
 
 let socket = null;
 let capture = null;
 let player = null;
-let wakeLock = null;
-
-function stored(key) {
-  try {
-    return localStorage.getItem(key) || "";
-  } catch {
-    return "";
-  }
-}
-
-function store(key, value) {
-  try {
-    if (value) localStorage.setItem(key, value);
-    else localStorage.removeItem(key);
-  } catch {
-    // private mode: the phone just asks again next time
-  }
-}
-
-async function keepScreenOn() {
-  try {
-    wakeLock = await navigator.wakeLock?.request("screen");
-  } catch {
-    wakeLock = null; // not fatal: the screen may dim
-  }
-}
 
 export const useHubStore = defineStore("hub", {
   state: () => ({
@@ -85,9 +60,8 @@ export const useHubStore = defineStore("hub", {
         },
       });
       player.unlock();
-      socket = new HubSocket({
-        pin: this.pin,
-        token: this.token,
+      socket = new RoomSocket({
+        hello: () => ({ role: "hub", pin: this.pin, token: this.token }),
         onStatus: (status) => (this.connection = status),
         onReady: () => {
           if (this.listening) socket.sendJson({ type: "mode", mode: "guide" }); // after a reconnect
@@ -101,9 +75,6 @@ export const useHubStore = defineStore("hub", {
       });
       socket.connect();
       keepScreenOn();
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") keepScreenOn();
-      });
       this.screen = "hub";
     },
 

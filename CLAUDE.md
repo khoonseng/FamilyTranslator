@@ -52,7 +52,7 @@ Only two audio channels exist: Cantonese (listeners) and Mandarin (hub speaker).
 
 Room and hub:
 - One fixed room for the whole trip; its bubbles start fresh each trip-local morning (earlier
-  days stay in the bucket). Listeners join by tapping its link (`…/join/<room token>`, shared in
+  days stay in the bucket). Listeners join by tapping its link (`…/join#<room token>`, shared in
   the family WhatsApp group) and stay joined; no QR code for now (decided 2026-10-26). Host
   phones can share the link and make a new one, which disconnects phones on the old link.
 - One active hub at a time. Any phone that has entered the hub PIN can tap **Become hub** to take
@@ -556,3 +556,7 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   Host listeners sign in on `/host` with the PIN and API token alone. Cloud Storage bucket
   `familytranslator-cq-clips` created (private, 30-day delete on `days/`, soft delete 0) and
   `google-cloud-storage` added (owner approved).
+- 2026-10-26 — The join link is `…/join#<room token>` (owner decision; was `…/join/<room
+  token>`). A phone never sends what follows the `#`, so the token stays out of Cloud Run's
+  request logs and out of WhatsApp's link-preview fetch; tapping it is unchanged for the family.
+  The listener page keeps each day's sentences and clips in IndexedDB with `idb` 8.0.4.

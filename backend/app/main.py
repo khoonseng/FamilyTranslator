@@ -4,7 +4,9 @@ Access (hard rule 1, owner decisions 2026-10-25/26): the hub needs both the hub 
 API token; a listener needs the room token from its join link, and a host listener also the PIN
 and API token; /openapi.json and every API endpoint need the API token (X-API-Token header, or
 ?t=).
-Open: /health, /docs (an empty shell that asks for the token) and the page's own files.
+Open: /health, /docs (an empty shell that asks for the token) and the page's own files, also
+served at /join (the join link, /join#<room token>: the phone never sends what follows the #)
+and /listen.
 
 Run locally: cd backend && uv run uvicorn app.main:app --reload --port 8000
 """
@@ -15,7 +17,7 @@ import uuid
 from functools import cache
 
 from fastapi import Depends, FastAPI, HTTPException, Security, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.security import APIKeyHeader, APIKeyQuery
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
@@ -114,6 +116,25 @@ def docs() -> HTMLResponse:
 @app.get("/openapi.json", include_in_schema=False, dependencies=[Token])
 def openapi() -> JSONResponse:
     return JSONResponse(app.openapi())
+
+
+def _app_page() -> FileResponse:
+    """The Vue app reads these addresses itself. The join link's token never reaches the
+    server here: it follows the #, and the page sends it in its WebSocket hello."""
+    index = config.static_dir() / "index.html"
+    if not index.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/join", include_in_schema=False)
+def join_page() -> FileResponse:
+    return _app_page()
+
+
+@app.get("/listen", include_in_schema=False)
+def listen_page() -> FileResponse:
+    return _app_page()
 
 
 @app.websocket("/ws/room")

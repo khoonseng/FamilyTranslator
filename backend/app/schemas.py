@@ -128,7 +128,7 @@ class Spend(BaseModel):
 
 
 class JoinLink(BaseModel):
-    """To host phones: the token for the family's join link, /join/<token>."""
+    """To host phones: the token for the family's join link, /join#<token>."""
 
     type: Literal["join_link"] = "join_link"
     token: str
