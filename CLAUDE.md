@@ -51,8 +51,10 @@ Only two audio channels exist: Cantonese (listeners) and Mandarin (hub speaker).
    to Cloud Storage (30 days) for backfill and replay.
 
 Room and hub:
-- One fixed room. Listeners join by tapping its link (`…/join/<room token>`, shared in the
-  family WhatsApp group) and stay joined; no QR code for now (decided 2026-10-26).
+- One fixed room for the whole trip; its bubbles start fresh each trip-local morning (earlier
+  days stay in the bucket). Listeners join by tapping its link (`…/join/<room token>`, shared in
+  the family WhatsApp group) and stay joined; no QR code for now (decided 2026-10-26). Host
+  phones can share the link and make a new one, which disconnects phones on the old link.
 - One active hub at a time. Any phone that has entered the hub PIN can tap **Become hub** to take
   over (e.g. the spare phone's battery dies); the old hub drops to listener, and bubble history
   carries on. If the hub is offline for more than about 20 s, listener phones show "Hub offline".
@@ -99,8 +101,9 @@ Build order:
      translation fallback (rule 4); it authenticates with the service account.
    - STT and TTS adapters are provider-specific (Google and OpenAI APIs differ).
    - Google speech APIs and Gemini on Vertex AI authenticate with the Cloud Run service account
-     (no keys). Secret Manager holds only the Groq and OpenAI keys, the hub PIN, the API token
-     and the room token.
+     (no keys). Secret Manager holds only the Groq and OpenAI keys, the hub PIN and the API
+     token. The join link's room token lives in the private bucket (`settings/join.json`), so
+     host phones can renew it.
    - Model IDs live in config, never hard-coded: Groq's lineup changes within weeks.
    - Reasoning is switched off on the translation LLM, or set to the lowest level the model allows
      (`gpt-oss-120b`: low), as per-provider config. STT and TTS have no reasoning setting. The
@@ -544,3 +547,12 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   WebSocket (no new web address, so hard rule 1's API-token rule holds); listeners use the
   link in a Safari tab; a per-device "Sound off (text only)" switch, mainly for tablets in the
   car; the hub stops playing Cantonese, ending the earphones exception (hard rule 13).
+- 2026-10-26 — One room for the whole trip, with an app-managed join link (owner decision;
+  supersedes the room token as a 5th secret). Bubbles start fresh each trip-local morning
+  (Asia/Shanghai) and sentence numbers restart, while earlier days stay in the bucket; a room
+  per day was weighed and rejected, since the in-laws would need a new link every morning. The
+  room token lives in the private bucket outside the 30-day rule; host phones can show and
+  share the link, or make a new one (old link stops working, phones on it are disconnected).
+  Host listeners sign in on `/host` with the PIN and API token alone. Cloud Storage bucket
+  `familytranslator-cq-clips` created (private, 30-day delete on `days/`, soft delete 0) and
+  `google-cloud-storage` added (owner approved).
