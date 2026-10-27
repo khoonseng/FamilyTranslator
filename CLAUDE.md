@@ -13,10 +13,11 @@ phones play Cantonese audio with large-font text. All phones use Singapore roami
 
 ## Current status
 
-- Phase: **Weeks 4–5 — Rooms, listener phones and replay** (update this line as phases
+- Phase: **Weeks 6–7 — Trip configuration and field tests** (update this line as phases
   complete; starts in plan mode). Week 1 (bake-off) closed 2026-10-25, results in
-  `docs/bakeoff-results.md`; weeks 2–3 (single-device MVP) closed 2026-10-26, deployed at
-  https://chongqing-translator-408139569144.us-central1.run.app.
+  `docs/bakeoff-results.md`; weeks 2–3 (single-device MVP) closed 2026-10-26; weeks 4–5 (rooms,
+  listener phones, replay) closed 2026-10-27, live at
+  https://chongqing-translator-408139569144.us-central1.run.app (revision 00007).
 - Trip: **19–23 Dec 2026** (5 days). Trip configuration incl. the always-on instance goes live 15 Dec.
 - Tech stack: **Python/FastAPI backend, Vue 3 frontend** — see "Stack" below
 - Primary translation model: **Gemini on Vertex AI** (bake-off winner; decided 2026-10-24,
@@ -332,8 +333,9 @@ Dockerfile
 - [x] Weeks 2–3 — Single-device MVP, guide → family (closed 2026-10-26; tested on the owner's
       iPhone): hub records Mandarin (or takes typed Mandarin), shows Cantonese text and plays
       Cantonese audio on earphones; adapters in place.
-- [ ] Weeks 4–5 — Rooms (QR join), WebSocket fan-out, listener PWA, player states, cache, backfill;
-      English text if time permits. (Primary translation model already decided: Gemini.)
+- [x] Weeks 4–5 — Rooms, WebSocket fan-out, listener PWA, player states, cache, backfill;
+      English text (closed 2026-10-27; tested on a laptop, an iPhone and an iPad: join link,
+      host controls, takeover, locked screen, catch-up, replay offline, Sound off).
 - [ ] Weeks 6–7 — Switch to the trip configuration first (see "Billing and plans"). Then field
       tests in Singapore with the family's own phones in noisy places. Compare transcripts from
       the spare hub phone on the "guide's" lanyard against a clip-on to decide whether to buy a
@@ -583,6 +585,20 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   5 holds); Standard-A only if a piece has no comma left to split at. Normal sentences are
   unchanged; the Part A sentence took 1.9 s to speak instead of under 1 s. Long sentences are
   likely: during non-stop narration the hub's 15 s segment cap, not a pause, ends the segment.
+- 2026-10-27 — Weeks 4–5 closed (owner). Revision 00007 tested on a laptop, an iPhone and an
+  iPad: join link, live audio, 5 minutes locked, flight-mode catch-up, offline replay, Sound
+  off, earphones out (auto-play off), remote pause and resume (the iPhone hub resumed without a
+  tap), Become hub mid-speech, and an old hub back from flight mode not taking the role back.
+  Owner decisions: no fix for English words in Mandarin (both LLMs keep them, the Latin-letter
+  check sends the sentence to Cloud Translation, which handles them acceptably); no stronger
+  echo detection for now. Still open, not decided: one iPhone disconnect while locked that
+  stayed on "Reconnecting…" (not reproduced; monitor); echo loops whenever a device on speaker
+  is near the hub (rule: earphones or Sound off near the hub; revisit if the weeks 6–7 field
+  tests show family phones on speaker are realistic); Groq refused Qwen with 429 five times in
+  7 days at 1–5 sentences a minute (free-plan limits; each fell to Cloud Translation); Android
+  phones untested; the family chatter check; a loudness gate with automatic gain control off.
+  The `cq-probe` test service and its images were deleted (owner, verified). Next: weeks 6–7,
+  in plan mode.
 - 2026-10-27 — Sessions and History move from "after the trip" to weeks 8–10 (owner decision;
   supersedes that part of 2026-10-13): host phones start optionally named sessions inside the
   one room (no new link for the family), and listener phones get a History screen of days,
