@@ -182,6 +182,7 @@ class Clip(BaseModel):
     type: Literal["clip"] = "clip"
     sentence_id: int
     bytes: int
+    voice: str = ""  # which voice spoke it (Despina, or the fallback); shown on host phones only
 
 
 class NoClip(BaseModel):

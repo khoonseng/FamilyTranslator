@@ -139,6 +139,13 @@ describe("listener store: sentences and clips", () => {
     expect(player.arrived).toEqual([1]);
   });
 
+  it("keeps each sentence's sources, for the host screen", () => {
+    listen.receive({ ...sentence(1), stt: "chirp_3", provider: "gemini" });
+    listen.receiveClip(1, mp3(), "yue-HK-Standard-A");
+    const { stt, provider, voice } = listen.sentences[1];
+    expect([stt, provider, voice]).toEqual(["chirp_3", "gemini", "yue-HK-Standard-A"]);
+  });
+
   it("no translation: text only, no clip expected", () => {
     listen.receive({ ...sentence(1), yue: "", status: "no_translation" });
     expect(listen.sentences[1].clip).toBe("none");

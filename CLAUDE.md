@@ -569,10 +569,13 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   hub", with "Listen on this phone" or "Make this phone the hub again". Become hub opens the hub
   page on the host phone (no separate message). The hub plays no audio and the earphones switch
   is gone (hard rule 13).
-- 2026-10-27 — Host phones show which speech-to-text (Chirp 3, gpt-transcribe, both, or typed)
-  and which translator (Gemini, Qwen, Cloud Translation) produced each sentence, in amber when a
-  fallback was used; family phones never show it (owner request). The speech-to-text is also
-  saved in each sentence's record in the bucket.
+- 2026-10-27 — Host phones show which speech-to-text (Chirp 3, gpt-transcribe, both, or typed),
+  which translator (Gemini, Qwen, Cloud Translation) and which voice (Despina, Standard-A)
+  produced each sentence, in amber when a fallback was used; family phones never show it (owner
+  request). Both are saved in each sentence's record in the bucket, and the log now says why a
+  voice was skipped. Found in Part A: Despina refuses a single sentence that is too long (85
+  characters with only commas: "This request contains sentences that are too long"), so
+  Standard-A spoke it.
 - 2026-10-27 — Sessions and History move from "after the trip" to weeks 8–10 (owner decision;
   supersedes that part of 2026-10-13): host phones start optionally named sessions inside the
   one room (no new link for the family), and listener phones get a History screen of days,

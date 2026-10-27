@@ -64,6 +64,12 @@ class Refused(Exception):
     status_code = 429
 
 
+class TooLong(Exception):
+    """Like Google's InvalidArgument: "This request contains sentences that are too long"."""
+
+    code = 400
+
+
 def translator(*models, fallback=None, deadline=0.2, timeout=1.0):
     return Translator(list(models), fallback or FakeCloudTranslate(), deadline, timeout)
 
@@ -166,7 +172,12 @@ def test_no_context_says_none():
 
 @pytest.mark.parametrize(
     "exc, outcome",
-    [(Refused(), "429"), (TimeoutError(), "timeout"), (RuntimeError(), "error")],
+    [
+        (Refused(), "429"),
+        (TimeoutError(), "timeout"),
+        (TooLong(), "rejected"),
+        (RuntimeError(), "error"),
+    ],
 )
 def test_outcome_labels(exc, outcome):
     assert outcome_of(exc) == outcome

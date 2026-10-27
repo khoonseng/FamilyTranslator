@@ -28,6 +28,15 @@ describe("sourceLabel", () => {
     });
   });
 
+  it("names the voice, and flags the fallback voice", () => {
+    const main = { stt: "chirp_3", provider: "gemini", voice: "yue-HK-Chirp3-HD-Despina" };
+    expect(sourceLabel(main)).toEqual({ text: "Chirp 3 · Gemini · Despina", fallback: false });
+    expect(sourceLabel({ ...main, voice: "yue-HK-Standard-A" })).toEqual({
+      text: "Chirp 3 · Gemini · Standard-A",
+      fallback: true,
+    });
+  });
+
   it("no translation, or an older record without the speech-to-text", () => {
     expect(sourceLabel({ stt: "chirp_3", provider: "" }).text).toBe("Chirp 3");
     expect(sourceLabel({ provider: "gemini" }).text).toBe("Gemini");

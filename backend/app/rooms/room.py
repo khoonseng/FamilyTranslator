@@ -324,7 +324,7 @@ class Room:
             self.clips[message.sentence_id] = audio
             while len(self.clips) > self.cfg["clips_in_memory"]:
                 self.clips.popitem(last=False)
-            self._set(message.sentence_id, clip="ready")
+            self._set(message.sentence_id, clip="ready", voice=message.voice)
             self._spawn(self._save(day, message.sentence_id, audio))
         elif isinstance(message, NoClip):
             self._set(message.sentence_id, clip="none")
@@ -364,7 +364,8 @@ class Room:
                 yield NoClip(sentence_id=record["id"]), None
             elif record["id"] in self.clips:
                 audio = self.clips[record["id"]]
-                yield Clip(sentence_id=record["id"], bytes=len(audio)), audio
+                voice = record.get("voice", "")
+                yield Clip(sentence_id=record["id"], bytes=len(audio), voice=voice), audio
             elif record["clip"] == "ready":
                 yield None, record["id"]
 
@@ -383,7 +384,8 @@ class Room:
         if audio is None:
             peer.put(NoClip(sentence_id=sentence_id))
         else:
-            peer.put(Clip(sentence_id=sentence_id, bytes=len(audio)), audio)
+            voice = record.get("voice", "")
+            peer.put(Clip(sentence_id=sentence_id, bytes=len(audio), voice=voice), audio)
 
     # --- sending ------------------------------------------------------------------------------
 

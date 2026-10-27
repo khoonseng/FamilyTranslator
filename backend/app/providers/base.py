@@ -8,7 +8,8 @@ from dataclasses import dataclass, field
 @dataclass
 class Attempt:
     """One provider tried for a sentence and why it was passed over: "429", "deadline",
-    "timeout", "junk", "bad_json" or "error". Logged as is: no text."""
+    "timeout", "rejected" (400: e.g. a sentence too long for a Chirp 3 HD voice), "junk",
+    "bad_json" or "error". Logged as is: no text."""
 
     provider: str
     outcome: str
@@ -73,4 +74,6 @@ def outcome_of(exc: BaseException) -> str:
         return "429"
     if isinstance(exc, TimeoutError) or "Timeout" in type(exc).__name__:
         return "timeout"
+    if status == 400:
+        return "rejected"
     return "error"

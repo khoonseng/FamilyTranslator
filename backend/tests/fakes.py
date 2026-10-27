@@ -73,12 +73,18 @@ class FakeTranslator:
 
 
 class FakeTts:
-    def __init__(self, fail=()):
-        self.fail = set(fail)
+    """Despina, unless the text is in `fail` (every voice fails) or `fallback` (Despina refuses
+    it and Standard-A speaks it, like a sentence too long for Despina)."""
+
+    def __init__(self, fail=(), fallback=()):
+        self.fail, self.fallback = set(fail), set(fallback)
 
     async def speak(self, text):
         if text in self.fail:
             raise SpeechFailed([Attempt("yue-HK-Chirp3-HD-Despina", "error", 0.1)])
+        if text in self.fallback:
+            refused = [Attempt("yue-HK-Chirp3-HD-Despina", "rejected", 0.1)]
+            return Speech(f"mp3:{text}".encode(), "yue-HK-Standard-A", 0.1, refused)
         return Speech(f"mp3:{text}".encode(), "yue-HK-Chirp3-HD-Despina", 0.1)
 
 

@@ -121,7 +121,9 @@ async def test_a_missing_clip_can_be_asked_for_again():
     listener, phone = join(room, last_id=1)
     await room.handle(listener, ClipRequest(sentence_id=1))
     await settle()
-    assert [m["sentence_id"] for m in phone.of("clip")] == [1]
+    assert [(m["sentence_id"], m["voice"]) for m in phone.of("clip")] == [
+        (1, "yue-HK-Chirp3-HD-Despina")  # the voice is remembered for catch-up and requests
+    ]
     assert phone.messages[-1] == "mp3:粵:第一句话。".encode()
 
 

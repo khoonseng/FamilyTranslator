@@ -82,7 +82,7 @@ export const useListenStore = defineStore("listen", {
     hub: { online: true, listening: false, remotePaused: false },
     day: stored("listenDay"),
     bubbles: [], // [{ id, sentenceIds: [] }], oldest first
-    sentences: {}, // id -> { id, bubbleId, zh, yue, en, status, stt, provider, clip, played }
+    sentences: {}, // id -> { id, bubbleId, zh, yue, en, status, stt, provider, voice, clip, played }
     player: { state: "live", waiting: 0, showJump: false, playingId: null },
     sound: stored("soundOff") !== "1",
     english: stored("english") === "1",
@@ -148,7 +148,7 @@ export const useListenStore = defineStore("listen", {
         onReady: (message) => this.ready(message),
         onRefused: (code) => this.refuse(code),
         onMessage: (message) => this.receive(message),
-        onClip: (id, data) => this.receiveClip(id, data),
+        onClip: (id, data, header) => this.receiveClip(id, data, header.voice),
       });
       socket.connect();
     },
@@ -224,13 +224,14 @@ export const useListenStore = defineStore("listen", {
       }
     },
 
-    receiveClip(id, data) {
+    receiveClip(id, data, voice = "") {
       recent.set(id, data);
       if (recent.size > RECENT_CLIPS) recent.delete(recent.keys().next().value);
       cache?.putClip(this.day, id, data);
       const sentence = this.sentences[id];
       if (!sentence) return;
       sentence.clip = "ready";
+      if (voice) sentence.voice = voice; // shown on host phones only
       this.persist(id);
       if (refetching.delete(id)) return;
       if (!sentence.played && id > historyUpTo) player.arrive(id);

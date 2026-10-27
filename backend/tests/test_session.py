@@ -198,6 +198,16 @@ async def test_voice_failure_sends_no_clip_and_keeps_order():
     assert kinds == ["sentence", "no_clip", "sentence", "clip"]
 
 
+async def test_each_clip_names_its_voice():
+    session, hub = make(fake_providers(tts=FakeTts(fallback={"粵:第二句。"})))
+    await session.on_message(TypedText(text="第一句。第二句。"))
+    await settle()
+    assert [m["voice"] for m in hub.of("clip")] == [
+        "yue-HK-Chirp3-HD-Despina",
+        "yue-HK-Standard-A",  # Despina refused it: shown on host phones
+    ]
+
+
 async def test_switching_guide_off_closes_the_open_segment():
     session, _, stt = await guide_session()
     stream = await speak(session, stt, end=False)

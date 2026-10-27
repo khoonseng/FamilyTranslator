@@ -346,16 +346,22 @@ class Pipeline:
                 speech = await self.p.tts.speak(translation.yue)
                 if self.meter:
                     self.meter.tts(speech.voice, len(translation.yue))
-                fields |= {"voice": speech.voice, "tts_s": speech.seconds}
-            except SpeechFailed:
+                fields |= {
+                    "voice": speech.voice,
+                    "voice_attempts": [f"{a.provider}:{a.outcome}" for a in speech.attempts],
+                    "tts_s": speech.seconds,
+                }
+            except SpeechFailed as failed:
                 speech = None
                 fields["outcome"] = "no_clip"
+                fields["voice_attempts"] = [f"{a.provider}:{a.outcome}" for a in failed.attempts]
             await clip_prev
             try:
                 if speech:
-                    await self._send(
-                        Clip(sentence_id=sentence_id, bytes=len(speech.audio)), speech.audio
+                    header = Clip(
+                        sentence_id=sentence_id, bytes=len(speech.audio), voice=speech.voice
                     )
+                    await self._send(header, speech.audio)
                 else:
                     await self._send(NoClip(sentence_id=sentence_id))
             finally:
