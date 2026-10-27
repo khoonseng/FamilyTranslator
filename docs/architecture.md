@@ -313,7 +313,7 @@ Every provider in the stack must keep zero data from the family's conversations,
   - A lifecycle rule deletes objects after 30 days. Lifecycle deletion runs on a schedule, so an object can outlive its age by up to about a day.
   - Soft delete is set to 0 on the bucket. Otherwise Cloud Storage keeps deleted objects for another 7 days by default, including lifecycle deletions.
   - The bucket is private. Clips reach phones only through the app, checked against the room token, never as public links.
-- Listener phones keep their IndexedDB cache; there is no end-of-day clear. Saving or exporting a bubble and browsing previous days come after the trip; until then, downloads are done manually from the bucket.
+- Listener phones keep their IndexedDB cache; there is no end-of-day clear. **Sessions and History** are planned for weeks 8–10 (decided 27 Oct): a host phone can start a new, optionally named session (for example "洪崖洞" or "Lunch") inside the one room, so nobody needs a new link, and a long quiet gap may start one by itself; a History screen on listener phones lists days, then sessions, then bubbles, with replay from the phone's cache or from the bucket over the WebSocket. Within 30 days, so the in-laws can find what was said at one attraction or one meal. Designed when weeks 8–10 start; until then, downloads are done manually from the bucket. Saving or exporting a bubble still comes after the trip.
 
 **The translation order (decided 24 Oct)**
 
@@ -613,7 +613,7 @@ gantt
 2. **Weeks 2–3, single-device MVP (guide → family). Done 26 Oct.** The hub records Mandarin or takes typed Mandarin, shows Cantonese text and plays Cantonese audio on earphones, with provider adapters in place. Built and tested on the owner's iPhone: the Chirp 3 stream per segment, the safety net, the half-sentence hold and echo detection (all decided 25 Oct); translations were judged 80–90% accurate, and with the earphones switch on nothing was lost while clips played.
 3. **Weeks 4–5, rooms and listener PWA.** QR join, WebSocket fan-out, bubbles, player states, on-phone cache, reconnect and backfill; English text if time permits. (The primary translation model was settled on 24 Oct: Gemini.)
 4. **Weeks 6–7, field tests in Singapore.** Everything first switches to its trip configuration (Groq Developer plan, OpenAI credit topped up, budget alert raised). The family uses their own phones in noisy places such as hawker centres and the MRT, with someone acting as the Mandarin guide and wearing the spare hub phone. Compare its transcripts against a clip-on to decide whether to buy a mic. Measure time-to-first-audio on the real app (about 4.2 s in week 1, accepted) and whether it feels fast enough to the family. Let the family chat in Cantonese near the hub to check the junk filter's provisional 15%, if no chatter was tested earlier. Phase 2 (family → guide) starts only once guide → family passes.
-5. **Weeks 8–10 (30 Nov–18 Dec), buffer.** Fixes; phase 2 (family → guide) if guide → family has passed; briefing the family on joining the room, replay and "Become hub". On 15 Dec, switch on the always-on instance.
+5. **Weeks 8–10 (30 Nov–18 Dec), buffer.** Fixes; sessions and History (decided 27 Oct); phase 2 (family → guide) if guide → family has passed; briefing the family on joining the room, replay and "Become hub". On 15 Dec, switch on the always-on instance.
 6. **Trip, 19–23 Dec.** On 24 Dec, set `min-instances` back to 0.
 
 ## Open decisions

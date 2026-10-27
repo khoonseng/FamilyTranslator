@@ -2,8 +2,10 @@
 // The listener's voice-note thread (architecture doc, "Listener experience"): the Cantonese
 // large, the guide's Mandarin small, English if switched on. ▶ replays a bubble; tapping a
 // sentence replays just that sentence (hard rule 11). Unplayed sentences carry a blue marker.
+// Host phones also see which speech-to-text and translator produced each sentence.
 // Phones and tablets alike: one centred column, with larger text on an iPad.
 import { nextTick, onMounted, watch } from "vue";
+import { sourceLabel } from "../lib/sources.js";
 import { useListenStore } from "../stores/listen.js";
 import HostPanel from "./HostPanel.vue";
 
@@ -102,6 +104,10 @@ const pill = (on) =>
               <p class="text-xl text-amber-800 md:text-2xl">未能翻譯 · Not translated</p>
               <p class="text-2xl md:text-3xl">{{ listen.sentences[id].zh }}</p>
             </template>
+            <p v-if="listen.host && sourceLabel(listen.sentences[id]).text" class="text-sm md:text-base"
+              :class="sourceLabel(listen.sentences[id]).fallback ? 'text-amber-700' : 'text-slate-400'">
+              {{ sourceLabel(listen.sentences[id]).text }}
+            </p>
           </div>
         </div>
       </article>

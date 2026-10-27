@@ -354,7 +354,9 @@ class Room:
         from the bucket."""
         newer = [r for sid, r in self.history.items() if sid > last_id]
         for record in newer:
-            yield Sentence(**{k: record[k] for k in Sentence.model_fields if k != "type"}), None
+            # Records saved before a field existed (e.g. `stt`) take its default.
+            fields = {k: record[k] for k in Sentence.model_fields if k != "type" and k in record}
+            yield Sentence(**fields), None
             if record["en"]:
                 yield English(sentence_id=record["id"], en=record["en"]), None
         for record in newer:

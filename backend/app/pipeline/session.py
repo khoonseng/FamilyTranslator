@@ -68,6 +68,7 @@ class _Pending:
 
     text: str
     bubble: int
+    stt: str  # which speech-to-text heard it
     carried: int = 0  # segments that ended without finishing it
 
 
@@ -135,7 +136,7 @@ class Pipeline:
         elif isinstance(message, TypedText):
             bubble = self.bubbles.new()
             for sentence in split_sentences(message.text) or [message.text.strip()]:
-                self._dispatch(sentence, bubble, source="typed")
+                self._dispatch(sentence, bubble, stt="typed")
 
     def on_audio(self, pcm: bytes) -> None:
         """Speech frames count only in Guide mode, inside a segment."""
@@ -190,7 +191,7 @@ class Pipeline:
         while (final := await live.chirp.finals.get()) is not None:
             after_end = round(perf_counter() - live.ended_at, 3) if live.ended_at else None
             live.covered_s = max(live.covered_s, final.end_s)
-            kept = self._take(final.text, live.bubble)
+            kept = self._take(final.text, live.bubble, self.stt_cfg["model"])
             log("stt_final", conn=self.conn, end_s=final.end_s, after_end_s=after_end, kept=kept)
         if live.chirp.error is not None:
             log("stt_error", conn=self.conn, error=type(live.chirp.error).__name__)
@@ -213,9 +214,9 @@ class Pipeline:
         if (len(live.pcm) - start) / BYTES_PER_SECOND < self.net_cfg["min_s"]:
             return
         t0 = perf_counter()
+        name = getattr(self.p.transcribe, "name", "gpt-transcribe")
         try:
             if self.meter:
-                name = getattr(self.p.transcribe, "name", "gpt-transcribe")
                 self.meter.stt(name, (len(live.pcm) - start) / BYTES_PER_SECOND)
             text = await self.p.transcribe.transcribe(bytes(live.pcm[start:]))
         except Exception as exc:  # noqa: BLE001 - the segment is lost; the guide carries on
@@ -223,7 +224,7 @@ class Pipeline:
             return
         if self.net_cfg["prompt_echo"] in text:  # a known hallucination on silence
             text = ""
-        kept = self._take(text, live.bubble) if text else 0
+        kept = self._take(text, live.bubble, name) if text else 0
         log(
             "safety_net",
             conn=self.conn,
@@ -235,18 +236,21 @@ class Pipeline:
 
     # --- transcripts into sentences -----------------------------------------------------------
 
-    def _take(self, text: str, bubble: int) -> int:
+    def _take(self, text: str, bubble: int, stt: str) -> int:
         """Splits new transcript text into sentences, joined to a held half-sentence, and holds
-        a new unfinished tail. Returns how many sentences were kept."""
+        a new unfinished tail. Returns how many sentences were kept. `stt` names the
+        speech-to-text that heard it; a sentence joined from two is labelled with both."""
         if self._pending:
-            text, bubble = self._pending.text + text, self._pending.bubble
+            held = self._pending
+            text, bubble = held.text + text, held.bubble
+            stt = held.stt if held.stt == stt else f"{held.stt}+{stt}"
             self._pending = None
         sentences = split_sentences(text)
         if sentences and not is_complete(sentences[-1]):
-            self._pending = _Pending(sentences.pop(), bubble)
-        return sum(self._accept(sentence, bubble) for sentence in sentences)
+            self._pending = _Pending(sentences.pop(), bubble, stt)
+        return sum(self._accept(sentence, bubble, stt) for sentence in sentences)
 
-    def _accept(self, sentence: str, bubble: int) -> bool:
+    def _accept(self, sentence: str, bubble: int, stt: str) -> bool:
         """Junk filter (hard rule 8): the text layers, then echo detection."""
         reason = drop_reason(sentence, self.pipe_cfg)
         if reason is None and self.echo.is_echo(sentence):
@@ -254,7 +258,7 @@ class Pipeline:
         if reason:
             log("sentence_dropped", conn=self.conn, reason=reason)
             return False
-        self._dispatch(sentence, bubble, source="speech")
+        self._dispatch(sentence, bubble, stt=stt)
         return True
 
     def _hold_or_flush(self) -> None:
@@ -283,11 +287,11 @@ class Pipeline:
     def _flush_pending(self) -> None:
         if self._pending:
             pending, self._pending = self._pending, None
-            self._accept(pending.text, pending.bubble)
+            self._accept(pending.text, pending.bubble, pending.stt)
 
     # --- one sentence -------------------------------------------------------------------------
 
-    def _dispatch(self, zh: str, bubble_hint: int, source: str) -> None:
+    def _dispatch(self, zh: str, bubble_hint: int, stt: str) -> None:
         sentence_id = self._next_id
         self._next_id += 1
         bubble = self.bubbles.on_sentence(bubble_hint)
@@ -298,16 +302,16 @@ class Pipeline:
         self._text_done, self._clip_done = loop.create_future(), loop.create_future()
         self._spawn(
             self._process(
-                sentence_id, bubble, zh, context, source,
+                sentence_id, bubble, zh, context, stt,
                 text_prev, self._text_done, clip_prev, self._clip_done,
             )
         )  # fmt: skip
 
     async def _process(
-        self, sentence_id, bubble, zh, context, source, text_prev, text_mine, clip_prev, clip_mine
+        self, sentence_id, bubble, zh, context, stt, text_prev, text_mine, clip_prev, clip_mine
     ) -> None:
         started = perf_counter()
-        fields = {"conn": self.conn, "id": sentence_id, "bubble": bubble, "source": source}
+        fields = {"conn": self.conn, "id": sentence_id, "bubble": bubble, "stt": stt}
         try:
             try:
                 translation = await self.p.translator.translate(zh, context)
@@ -324,6 +328,7 @@ class Pipeline:
                         yue=translation.yue if translation else "",
                         status="ok" if translation else "no_translation",
                         provider=translation.provider if translation else "",
+                        stt=stt,
                     )
                 )
             finally:

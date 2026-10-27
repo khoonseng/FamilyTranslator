@@ -169,6 +169,10 @@ class Sentence(BaseModel):
     yue: str
     status: Literal["ok", "no_translation"] = "ok"
     provider: str = ""  # which translator produced it (gemini, qwen, cloud-translate)
+    # Which speech-to-text heard it: chirp_3, gpt-transcribe (safety net or stream down), both
+    # joined with "+" (a held half-sentence finished by the other), or typed. Shown on host
+    # phones only, with `provider`.
+    stt: str = ""
 
 
 class Clip(BaseModel):

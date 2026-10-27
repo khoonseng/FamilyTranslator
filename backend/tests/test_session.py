@@ -177,6 +177,7 @@ async def test_typed_mandarin_skips_stt_and_the_filter_and_gets_its_own_bubble()
         ("我们在门口集合。", 1),
         ("嗯。", 1),
     ]
+    assert {m["stt"] for m in hub.of("sentence")} == {"typed"}
 
 
 async def test_translation_failure_sends_the_transcript_for_the_operator():
@@ -219,9 +220,22 @@ async def test_audio_chirp_skipped_goes_to_gpt_transcribe():
     await session.on_message(SegmentEnd())
     await settle()
     assert transcribe.calls == [int((6 - 2.0 + 0.2) * 32_000)]  # from 1.8 s, a little overlap
-    assert [m["zh"] for m in hub.of("sentence")] == [
-        "可以去悬崖餐厅看夜景。",
-        "一边吃烧烤一边看夜景。",
+    assert [(m["zh"], m["stt"]) for m in hub.of("sentence")] == [
+        ("可以去悬崖餐厅看夜景。", "chirp_3"),
+        ("一边吃烧烤一边看夜景。", "gpt-transcribe"),  # shown on host phones
+    ]
+
+
+async def test_a_half_sentence_finished_by_the_safety_net_names_both():
+    transcribe = FakeTranscribe("去洪崖洞。")
+    session, hub, stt = await guide_session(transcribe=transcribe)
+    await session.on_message(SegmentStart(pause_s=3))
+    session.on_audio(ONE_SECOND * 6)
+    stt.streams[-1].final("我们等一下", end_s=2.0)  # Chirp 3 stopped mid-sentence
+    await session.on_message(SegmentEnd())
+    await settle()
+    assert [(m["zh"], m["stt"]) for m in hub.of("sentence")] == [
+        ("我们等一下去洪崖洞。", "chirp_3+gpt-transcribe"),
     ]
 
 

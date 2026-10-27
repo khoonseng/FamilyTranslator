@@ -82,7 +82,7 @@ export const useListenStore = defineStore("listen", {
     hub: { online: true, listening: false, remotePaused: false },
     day: stored("listenDay"),
     bubbles: [], // [{ id, sentenceIds: [] }], oldest first
-    sentences: {}, // id -> { id, bubbleId, zh, yue, en, status, clip, played }
+    sentences: {}, // id -> { id, bubbleId, zh, yue, en, status, stt, provider, clip, played }
     player: { state: "live", waiting: 0, showJump: false, playingId: null },
     sound: stored("soundOff") !== "1",
     english: stored("english") === "1",
@@ -197,6 +197,8 @@ export const useListenStore = defineStore("listen", {
           yue: message.yue,
           en: old?.en ?? "",
           status: message.status,
+          stt: message.stt ?? "", // shown on host phones only
+          provider: message.provider ?? "",
           clip: old?.clip === "ready" ? "ready" : message.status === "ok" ? "pending" : "none",
           played: old?.played ?? message.id <= historyUpTo,
         });

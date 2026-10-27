@@ -341,8 +341,9 @@ Dockerfile
       ask the family whether it feels fast enough. Check the junk filter's provisional 15%
       against family chatter near the hub, if not done earlier. Phase 2 (family → guide) starts
       only once guide → family passes.
-- [ ] Weeks 8–10 (30 Nov–18 Dec) — Buffer, fixes, phase 2 if guide → family has passed, family
-      briefing. 15 Dec: `min-instances=1` on. Trip 19–23 Dec; `min-instances=0` on 24 Dec.
+- [ ] Weeks 8–10 (30 Nov–18 Dec) — Buffer, fixes, sessions and History (named sessions inside
+      the one room, a History screen to revisit them within 30 days; decided 2026-10-27), phase 2
+      if guide → family has passed, family briefing (incl.: the hub phone runs only the hub page). 15 Dec: `min-instances=1` on. Trip 19–23 Dec; `min-instances=0` on 24 Dec.
 
 ## Working agreement
 
@@ -568,3 +569,12 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   hub", with "Listen on this phone" or "Make this phone the hub again". Become hub opens the hub
   page on the host phone (no separate message). The hub plays no audio and the earphones switch
   is gone (hard rule 13).
+- 2026-10-27 — Host phones show which speech-to-text (Chirp 3, gpt-transcribe, both, or typed)
+  and which translator (Gemini, Qwen, Cloud Translation) produced each sentence, in amber when a
+  fallback was used; family phones never show it (owner request). The speech-to-text is also
+  saved in each sentence's record in the bucket.
+- 2026-10-27 — Sessions and History move from "after the trip" to weeks 8–10 (owner decision;
+  supersedes that part of 2026-10-13): host phones start optionally named sessions inside the
+  one room (no new link for the family), and listener phones get a History screen of days,
+  sessions and bubbles within the 30 days. Designed when weeks 8–10 start. Saving or exporting
+  a bubble still comes after the trip.

@@ -245,6 +245,17 @@ async def test_a_restart_brings_back_the_day_and_carries_on_numbering():
     assert phone.of("sentence")[-1]["bubble_id"] == 2  # a new bubble after the restart
 
 
+async def test_records_saved_before_a_new_field_still_catch_up():
+    store = RoomStore(MemoryStore())
+    old = {"id": 1, "bubble_id": 1, "zh": "第一句话。", "yue": "粵", "status": "ok",
+           "provider": "gemini", "en": "", "clip": "none"}  # fmt: skip
+    await store.put_sentence("2026-12-19", old)  # saved before `stt` existed
+    room = await make_room(store=store)
+    _, phone = join(room)
+    await settle()
+    assert phone.last("sentence")["stt"] == ""
+
+
 async def test_catch_up_fetches_older_clips_from_the_bucket():
     room = await make_room(clips_in_memory=1)
     hub, _ = join(room, "hub", host=True)
