@@ -49,6 +49,7 @@ class Speech:
     voice: str
     seconds: float
     attempts: list[Attempt] = field(default_factory=list)
+    pieces: int = 1  # more than 1: too long for the voice in one go, split and joined
 
 
 class SpeechFailed(Exception):

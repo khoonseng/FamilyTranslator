@@ -349,6 +349,7 @@ class Pipeline:
                 fields |= {
                     "voice": speech.voice,
                     "voice_attempts": [f"{a.provider}:{a.outcome}" for a in speech.attempts],
+                    "voice_pieces": speech.pieces,
                     "tts_s": speech.seconds,
                 }
             except SpeechFailed as failed:

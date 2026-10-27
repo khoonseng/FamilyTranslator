@@ -576,6 +576,13 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   voice was skipped. Found in Part A: Despina refuses a single sentence that is too long (85
   characters with only commas: "This request contains sentences that are too long"), so
   Standard-A spoke it.
+- 2026-10-27 — A sentence too long for Despina is split for the voice only (owner decision):
+  at the comma nearest its middle, again if need be (at most 8 pieces), Despina speaks the
+  pieces at once and the server joins their MP3s into the sentence's one clip (Google's MP3s
+  are plain frames, so they join cleanly). The words are exactly the displayed `yue` (hard rule
+  5 holds); Standard-A only if a piece has no comma left to split at. Normal sentences are
+  unchanged; the Part A sentence took 1.9 s to speak instead of under 1 s. Long sentences are
+  likely: during non-stop narration the hub's 15 s segment cap, not a pause, ends the segment.
 - 2026-10-27 — Sessions and History move from "after the trip" to weeks 8–10 (owner decision;
   supersedes that part of 2026-10-13): host phones start optionally named sessions inside the
   one room (no new link for the family), and listener phones get a History screen of days,
