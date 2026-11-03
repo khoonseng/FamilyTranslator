@@ -43,8 +43,9 @@ stt:
     prompt_echo: "Places and dishes"   # gpt-transcribe repeating its prompt on silence
 
 translation:
-  # Tried in order per sentence; Cloud Translation is the last resort (hard rule 4).
-  order: [gemini, qwen]
+  # Tried in order per sentence; Cloud Translation is the last resort (hard rule 4). gpt-oss
+  # joined on 2026-11-03: Groq's free limits apply per model, so it is a second allowance.
+  order: [gemini, qwen, gpt-oss]
   # Gemini's `yue` must be complete within this, or the sentence goes to the next provider
   # (decided 2026-10-24; tuned in testing).
   yue_deadline_s: 2.5
@@ -69,6 +70,11 @@ translation:
       model: qwen/qwen3.8-27b     # Preview: re-check the ID before the trip
       temperature: 0.2
       params: {reasoning_effort: none}
+    gpt-oss:
+      provider: groq
+      model: openai/gpt-oss-120b
+      temperature: 0.2            # 1.0 looped in the bake-off (hard rule 6)
+      params: {reasoning_effort: low, include_reasoning: false}   # its lowest; as in the bake-off
   cloud_translate:
     location: us-central1
 
@@ -106,8 +112,8 @@ spending:
   # 2026 unless marked "estimate"; re-check before the trip.
   warn_usd: 12
   stt_per_minute: {chirp_3: 0.016, gpt-transcribe: 0.0045}
-  llm_per_million_in: {gemini: 1.50, qwen: 0.30}      # qwen: estimate, check Groq's pricing page
-  llm_per_million_out: {gemini: 7.50, qwen: 0.60}     # qwen: estimate
+  llm_per_million_in: {gemini: 1.50, qwen: 0.30, gpt-oss: 0.15}   # qwen, gpt-oss: estimates,
+  llm_per_million_out: {gemini: 7.50, qwen: 0.60, gpt-oss: 0.60}  # check Groq's pricing page
   mt_per_million_chars: 20                            # Cloud Translation, estimate
   tts_per_million_chars: {chirp3_hd: 30, standard: 4} # standard: estimate
 

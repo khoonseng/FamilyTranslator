@@ -16,6 +16,10 @@ describe("sourceLabel", () => {
       text: "Chirp 3 · Qwen",
       fallback: true,
     });
+    expect(sourceLabel({ stt: "chirp_3", provider: "gpt-oss" })).toEqual({
+      text: "Chirp 3 · gpt-oss",
+      fallback: true,
+    });
     expect(sourceLabel({ stt: "chirp_3", provider: "cloud-translate" }).text).toBe(
       "Chirp 3 · Cloud Translation",
     );

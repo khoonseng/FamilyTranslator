@@ -129,6 +129,32 @@ async def test_escaped_quotes_in_yue_are_decoded():
     assert (await t.translate("...", [])).yue == '佢話「"開燈"」'
 
 
+async def test_gpt_oss_answers_when_gemini_and_qwen_fail():
+    t = translator(
+        FakeModel("gemini", deadline=True, error=Refused()),
+        FakeModel("qwen", error=Refused()),  # Groq's free limit for Qwen
+        FakeModel("gpt-oss"),  # a separate allowance on Groq
+    )
+    result = await t.translate("...", [])
+    assert result.provider == "gpt-oss"
+    outcomes = [(a.provider, a.outcome) for a in result.attempts]
+    assert outcomes == [("gemini", "429"), ("qwen", "429")]
+
+
+def test_config_tries_three_llms_and_prices_each():
+    from app import config
+
+    cfg = config.load()
+    order = cfg["translation"]["order"]
+    assert order == ["gemini", "qwen", "gpt-oss"]
+    gpt_oss = cfg["translation"]["models"]["gpt-oss"]
+    assert (gpt_oss["provider"], gpt_oss["model"]) == ("groq", "openai/gpt-oss-120b")
+    assert gpt_oss["params"]["reasoning_effort"] == "low"  # its lowest (hard rule 6)
+    for name in order:  # the spend figure counts every translator
+        assert name in cfg["spending"]["llm_per_million_in"]
+        assert name in cfg["spending"]["llm_per_million_out"]
+
+
 async def test_both_llms_fail_then_cloud_translation():
     fallback = FakeCloudTranslate()
     t = translator(
