@@ -38,9 +38,10 @@ Only two audio channels exist: Cantonese (listeners) and Mandarin (hub speaker).
 
 ## Architecture in brief
 
-1. Hub = a spare phone the guide carries on a lanyard, with its own eSIM or SIM; the owner's
-   phone is the fallback hub. **Guide** latches into continuous listening; client-side VAD splits
-   speech at pauses. Family replies (phase 2) come from family phones with the hub PIN
+1. Hub = the owner's iPhone, carried by the owner (no spare phone; decided 2026-11-03); the
+   wife's iPhone is the fallback hub. The guide wears a clip-on mic (DJI Mic Mini 2 transmitter)
+   connected to the hub by Bluetooth and chosen in the hub's Mic settings. **Guide** latches
+   into continuous listening; client-side VAD splits speech at pauses. Family replies (phase 2) come from family phones with the hub PIN
    (push-to-talk or typing); **Family** on the hub stays as an option.
 2. The hub streams audio; Cloud Run opens one Chirp 3 stream per speech segment in the language
    set by the mode, with `gpt-transcribe` filling any gaps (hard rule 9).
@@ -57,7 +58,7 @@ Room and hub:
   the family WhatsApp group) and stay joined; no QR code for now (decided 2026-10-26). Host
   phones can share the link and make a new one, which disconnects phones on the old link.
 - One active hub at a time. Any phone that has entered the hub PIN can tap **Become hub** to take
-  over (e.g. the spare phone's battery dies); the old hub stops listening, and bubble history
+  over (e.g. the hub iPhone's battery dies); the old hub stops listening, and bubble history
   carries on. Only a deliberate Start or Become hub takes over: a hub's automatic reconnect never
   takes the role back from a phone that took over meanwhile. If the hub is offline for more than
   about 20 s, listener phones show "Hub offline".
@@ -136,8 +137,8 @@ Build order:
      capture. Typing works any time; replies and guide sentences show in order of arrival.
    - Typed text (hub or listener) may be language-detected; this rule covers speech only.
    - In Guide mode, a four-layer junk filter drops speech that isn't the guide before translation.
-     It is a filter, never a router: (1) the mic sits close to the guide (spare hub phone or
-     clip-on); (2) STT receives `cmn-Hans-CN` and `yue-Hant-HK` (with Mandarin alone, Chirp 3
+     It is a filter, never a router: (1) the mic sits close to the guide (the guide's
+     Bluetooth clip-on); (2) STT receives `cmn-Hans-CN` and `yue-Hant-HK` (with Mandarin alone, Chirp 3
      rewrites Cantonese speech as fluent Mandarin), the transcript is split into sentences, and a
      sentence is dropped when Cantonese-only characters (哋, 唔, 喺, 嘅, 咗, 冇, 佢, 嚟, 啲, 嘢, 嗰,
      乜, 囉, 喎, 咩, 咁) exceed 15% of its characters (provisional, decided 2026-10-25: check it
@@ -150,8 +151,13 @@ Build order:
      Neither Chirp 3's language labels (it labelled Cantonese speech as Mandarin) nor
      confidence scores (it has none usable) are ever a filter.
    - Tint the whole hub screen per mode so the current mode is unmistakable.
-   - Capture from the phone's default audio input (`getUserMedia`), so a wired/USB-C clip-on mic
-     works if one is added later. Do not build Bluetooth mic support.
+   - Capture with `getUserMedia` from the input chosen in the hub's Mic settings (default: the
+     phone's own mic). The guide's clip-on connects by **Bluetooth** (owner decision
+     2026-11-03): iOS Safari ignores plug-in Lightning/USB-C mics (WebKit bug 211192), and
+     "Phone default" still means the iPhone's own mic, so the DJI is chosen by name. Because
+     iOS silently falls back to the built-in mic when the Bluetooth link drops, the hub must
+     make a lost clip-on obvious. No Bluetooth-specific code: the phone pairs it, the app only
+     picks the input.
 9. Streaming STT with a safety net (decided 2026-10-24). Silence is never sent: Silero VAD runs
    in the browser (`@ricky0123/vad-web`).
    - **Hub:** while Guide is latched, streams speech audio to the server as it is spoken. The VAD
@@ -617,3 +623,18 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   "Phone voice processing" switch. Hard rule 13 amended: echo cancellation may be off on the
   hub; pausing capture during playback remains the defence. Defaults stay as before until the
   owner's test shows which combination works.
+- 2026-11-03 — The guide's clip-on connects by Bluetooth (owner decision; hard rule 8 changed
+  from "do not build Bluetooth mic support"). Tests on the owner's iPhone: with the DJI's
+  plug-in receiver, Safari always captured the built-in mic, even when the stream was labelled
+  "Wireless Mic Rx" (WebKit bug 211192, reopened April 2026, iOS 26.3+); the hub's mic settings
+  and the /mictest page with the audio-session workaround (WebKit bug 282939) all failed. With
+  the DJI transmitter paired directly by Bluetooth and chosen by name in Mic settings, Safari
+  captured it clearly from the next room, with voice processing on or off, and the hub
+  transcribed it. "Phone default" still captured the iPhone's mic. The owner's iPhone 14 Pro is
+  the hub, carried by the owner (no spare phone; supersedes 2026-10-13), the wife's iPhone 15
+  the fallback hub (the DJI pairs with one phone at a time, so Become hub means re-pairing it
+  there). Still to check in the weeks 6–7 field tests: Bluetooth range (bodies and crowds cut
+  it, the guide's own body most of all), what happens when the link drops (iOS falls back to
+  the built-in mic silently), and the transmitter's battery. In phase 2, iOS may route the
+  hub's Mandarin replies to the Bluetooth device. Chrome on iPhone is no alternative: every
+  iOS browser uses WebKit.
