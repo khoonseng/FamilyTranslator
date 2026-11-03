@@ -44,6 +44,15 @@ const connectionLabel = {
       <p v-if="hub.remotePaused && !hub.listening" class="rounded-lg bg-amber-100 p-3 text-lg text-amber-900">
         已由另一部手機暫停 · Paused from another phone
       </p>
+      <!-- Never deaf without saying so (weeks 6–7 step 2). -->
+      <button v-if="hub.listening && hub.needTap"
+        class="rounded-2xl bg-red-600 p-5 text-2xl font-bold text-white shadow" @click="hub.tapResume()">
+        撳一下繼續收聽 · Tap to resume listening
+      </button>
+      <p v-else-if="hub.listening && hub.micLost" class="rounded-lg bg-red-600 p-3 text-lg font-semibold text-white">
+        夾咪斷咗 · Clip-on mic lost: the phone's own mic is listening.
+        Move closer to the guide; it switches back by itself.
+      </p>
 
       <button
         class="rounded-2xl p-6 text-4xl font-bold text-white shadow"

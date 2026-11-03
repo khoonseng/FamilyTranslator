@@ -14,9 +14,18 @@ const note = ref("");
 
 const hubLabel = computed(() => {
   if (!listen.hub.online) return "Hub offline";
-  if (listen.hub.listening) return "Guide listening";
+  if (listen.hub.listening && listen.hub.interrupted) return "Hub not hearing: tap needed on the hub";
+  if (listen.hub.listening && listen.hub.micLost) return "Clip-on lost: phone mic listening";
+  if (listen.hub.listening) {
+    const mic = { external: " · clip-on", phone: " · phone mic" }[listen.hub.mic] ?? "";
+    return `Guide listening${mic}`;
+  }
   return listen.hub.remotePaused ? "Guide paused" : "Guide not listening";
 });
+// The hub can't hear the guide properly: shown in red.
+const hubTrouble = computed(
+  () => listen.hub.online && listen.hub.listening && (listen.hub.interrupted || listen.hub.micLost),
+);
 const usd = (value) => `US$${value.toFixed(2)}`;
 
 function pauseGuide() {
@@ -66,6 +75,9 @@ function newLink() {
 
 <template>
   <section class="flex flex-col gap-2">
+    <p v-if="hubTrouble" class="rounded-lg bg-red-600 px-3 py-2 text-lg font-semibold text-white">
+      {{ hubLabel }}
+    </p>
     <p v-if="listen.spend?.warn" class="rounded-lg bg-red-600 px-3 py-2 text-lg font-semibold text-white">
       Today's spend {{ usd(listen.spend.usd) }} is over {{ usd(listen.spend.warnUsd) }}.
       Translation carries on.

@@ -79,7 +79,14 @@ export const useListenStore = defineStore("listen", {
     spend: null, // host phones: { usd, warn, warnUsd }
     joinToken: "", // host phones: the family's join link
     connection: "offline", // connecting | connected | offline
-    hub: { online: true, listening: false, remotePaused: false },
+    hub: {
+      online: true,
+      listening: false,
+      remotePaused: false,
+      mic: "",
+      micLost: false,
+      interrupted: false,
+    },
     day: stored("listenDay"),
     bubbles: [], // [{ id, sentenceIds: [] }], oldest first
     sentences: {}, // id -> { id, bubbleId, zh, yue, en, status, stt, provider, voice, clip, played }
@@ -214,6 +221,9 @@ export const useListenStore = defineStore("listen", {
           online: message.online,
           listening: message.listening,
           remotePaused: message.remote_paused,
+          mic: message.mic ?? "", // external (the clip-on) | phone | "" (not reported)
+          micLost: !!message.mic_lost,
+          interrupted: !!message.interrupted,
         };
       } else if (message.type === "day") {
         this.newDay(message.day);

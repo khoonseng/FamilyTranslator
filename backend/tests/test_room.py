@@ -7,6 +7,7 @@ from app.rooms.room import Room
 from app.schemas import (
     ClipRequest,
     GuideControl,
+    HubMic,
     LinkRequest,
     Mode,
     SegmentStart,
@@ -154,7 +155,34 @@ async def test_a_host_can_pause_and_resume_guide_remotely():
     assert hub_phone.last("guide_remote")["paused"] is False
     assert host_phone.last("hub_status") == {
         "type": "hub_status", "online": True, "listening": True, "remote_paused": False,
+        "mic": "", "mic_lost": False, "interrupted": False,
     }  # fmt: skip
+
+
+async def test_host_phones_learn_when_the_clip_on_is_lost_or_the_hub_needs_a_tap():
+    room = await make_room()
+    hub, _ = join(room, "hub", host=True)
+    _, host_phone = join(room, host=True)
+    await room.handle(hub, HubMic(mic="external"))
+    await settle()
+    assert host_phone.last("hub_status")["mic"] == "external"
+    await room.handle(hub, HubMic(mic="phone", lost=True, interrupted=True))
+    await settle()
+    status = host_phone.last("hub_status")
+    assert (status["mic"], status["mic_lost"], status["interrupted"]) == ("phone", True, True)
+
+
+async def test_only_the_hub_reports_its_mic_and_a_new_hub_starts_unknown():
+    room = await make_room()
+    hub, _ = join(room, "hub", host=True)
+    listener, phone = join(room)
+    await room.handle(hub, HubMic(mic="phone", lost=True))
+    await room.handle(listener, HubMic(mic="external"))  # ignored
+    await settle()
+    assert phone.last("hub_status")["mic"] == "phone"
+    join(room, "hub", host=True)  # Become hub on another phone
+    await settle()
+    assert (phone.last("hub_status")["mic"], phone.last("hub_status")["mic_lost"]) == ("", False)
 
 
 async def test_a_new_hub_takes_over_mid_speech():

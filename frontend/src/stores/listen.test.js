@@ -186,6 +186,13 @@ describe("listener store: sentences and clips", () => {
 
   it("hub status is shown as sent", () => {
     listen.receive({ type: "hub_status", online: false, listening: false, remote_paused: true });
-    expect(listen.hub).toEqual({ online: false, listening: false, remotePaused: true });
+    expect(listen.hub).toEqual({
+      online: false, listening: false, remotePaused: true, mic: "", micLost: false, interrupted: false,
+    });
+    listen.receive({
+      type: "hub_status", online: true, listening: true, remote_paused: false,
+      mic: "phone", mic_lost: true, interrupted: false,
+    });
+    expect([listen.hub.mic, listen.hub.micLost]).toEqual(["phone", true]);
   });
 });

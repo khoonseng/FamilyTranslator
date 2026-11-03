@@ -79,8 +79,26 @@ class LinkRequest(BaseModel):
     new: bool = False
 
 
+class HubMic(BaseModel):
+    """The hub: which mic it hears (the guide's clip-on, or the phone's own), whether the chosen
+    clip-on is lost, and whether it needs a tap to listen again (weeks 6–7 step 2)."""
+
+    type: Literal["hub_mic"] = "hub_mic"
+    mic: Literal["external", "phone"]
+    lost: bool = False
+    interrupted: bool = False
+
+
 PhoneMessage = Annotated[
-    Hello | Mode | SegmentStart | SegmentEnd | TypedText | ClipRequest | GuideControl | LinkRequest,
+    Hello
+    | Mode
+    | SegmentStart
+    | SegmentEnd
+    | TypedText
+    | ClipRequest
+    | GuideControl
+    | LinkRequest
+    | HubMic,
     Field(discriminator="type"),
 ]
 phone_message = TypeAdapter(PhoneMessage)
@@ -142,6 +160,10 @@ class HubStatus(BaseModel):
     online: bool
     listening: bool
     remote_paused: bool
+    # From the hub's HubMic: "external" (the clip-on), "phone", or "" before it says.
+    mic: str = ""
+    mic_lost: bool = False
+    interrupted: bool = False
 
 
 class GuideRemote(BaseModel):

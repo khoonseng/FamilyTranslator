@@ -24,6 +24,9 @@ class FakeCapture {
   get input() {
     return { label: this.options.deviceId === "dji" ? "DJI Mic Mini 2" : "iPhone Microphone" };
   }
+  get track() {
+    return { state: this.ended ? "ended" : "live", muted: false };
+  }
   async start() {
     if (this.options.deviceId === "gone") {
       throw Object.assign(new Error("no such input"), { name: "OverconstrainedError" });
@@ -72,7 +75,7 @@ describe("hub store", () => {
   it("a reconnect as hub turns Guide back on at the server", () => {
     hub.listening = true;
     hub.ready({ role: "hub", day: "2026-12-19", latest_id: 0 });
-    expect(socket.sent).toEqual([{ type: "mode", mode: "guide" }]);
+    expect(socket.sent.filter((m) => m.type === "mode")).toEqual([{ type: "mode", mode: "guide" }]);
   });
 
   it("remote pause switches Guide off, and resume switches it back on", async () => {
@@ -81,7 +84,8 @@ describe("hub store", () => {
     expect([hub.listening, hub.remotePaused, capture.running]).toEqual([false, true, false]);
     await hub.remote(false);
     expect([hub.listening, hub.remotePaused, capture.running]).toEqual([true, false, true]);
-    expect(socket.sent.map((m) => m.mode)).toEqual(["guide", "off", "guide"]);
+    const modes = socket.sent.filter((m) => m.type === "mode").map((m) => m.mode);
+    expect(modes).toEqual(["guide", "off", "guide"]);
   });
 
   it("tapping Guide clears the remote-pause notice", async () => {
@@ -121,11 +125,81 @@ describe("hub store", () => {
     expect([made.options.processing, hub.processing]).toEqual([false, false]);
   });
 
-  it("a remembered mic that is unplugged falls back to the phone's default", async () => {
+  it("a remembered mic that is missing: the phone's mic, the choice kept, and say it's lost", async () => {
     setHubParts({ capture: null, makeCapture: async (o) => new FakeCapture(o) });
     hub.micId = "gone";
     await hub.setGuide(true);
-    expect([hub.micId, hub.listening, hub.micError]).toEqual(["", true, ""]);
+    expect([hub.micId, hub.listening, hub.micError, hub.micLost]).toEqual(["gone", true, "", true]);
+  });
+});
+
+describe("hub store: never deaf without saying so", () => {
+  const IPHONE = { id: "iphone", label: "iPhone Microphone" };
+  const DJI = { id: "dji", label: "DJI Mic Mini 2" };
+  let made, inputs;
+
+  beforeEach(async () => {
+    inputs = [IPHONE, DJI];
+    setHubParts({
+      capture: null,
+      makeCapture: async (o) => (made = new FakeCapture(o)),
+      listInputs: async () => inputs,
+      audioContext: null,
+    });
+    hub.micId = "dji";
+    await hub.setGuide(true);
+    socket.sent = [];
+  });
+
+  const reports = () => socket.sent.filter((m) => m.type === "hub_mic");
+
+  it("the clip-on drops out: the phone's mic listens, the hub says so, host phones are told", async () => {
+    inputs = [IPHONE];
+    await hub.checkMic();
+    expect([made.options.deviceId, hub.micLost, hub.listening]).toEqual(["", true, true]);
+    expect(reports().at(-1)).toEqual({ type: "hub_mic", mic: "phone", lost: true, interrupted: false });
+  });
+
+  it("the clip-on comes back: the hub switches back by itself", async () => {
+    inputs = [IPHONE];
+    await hub.checkMic();
+    inputs = [IPHONE, DJI];
+    await hub.checkMic();
+    expect([made.options.deviceId, hub.micLost, hub.micLabel]).toEqual(["dji", false, "DJI Mic Mini 2"]);
+    expect(reports().at(-1)).toEqual({ type: "hub_mic", mic: "external", lost: false, interrupted: false });
+  });
+
+  it("nothing changed: no restart and no repeated report", async () => {
+    const before = made;
+    await hub.checkMic();
+    expect(made).toBe(before);
+    expect(reports()).toEqual([]);
+  });
+
+  it("the microphone was ended by another app: it is opened again", async () => {
+    const before = made;
+    made.ended = true;
+    await hub.checkMic();
+    expect(made).not.toBe(before);
+    expect(hub.listening).toBe(true);
+  });
+
+  it("back from another app with the engine stuck: ask for a tap, which brings it back", async () => {
+    const engine = { state: "suspended", resume: async () => {} }; // iOS won't resume it
+    setHubParts({ audioContext: engine });
+    await hub.checkMic({ resume: true });
+    expect(hub.needTap).toBe(true);
+    expect(reports().at(-1).interrupted).toBe(true);
+    engine.state = "running"; // the tap resumes it
+    await hub.tapResume();
+    expect([hub.needTap, hub.listening]).toEqual([false, true]);
+  });
+
+  it("not listening: no checks", async () => {
+    await hub.setGuide(false);
+    inputs = [IPHONE];
+    await hub.checkMic();
+    expect(hub.micLost).toBe(false);
   });
 
   it("says which sentence it has, so catch-up starts after it", () => {

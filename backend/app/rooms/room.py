@@ -37,6 +37,7 @@ from app.schemas import (
     Error,
     GuideControl,
     GuideRemote,
+    HubMic,
     HubStatus,
     JoinLink,
     LinkRequest,
@@ -96,6 +97,7 @@ class Room:
         self.join_token = ""
         self.listening = False  # the hub's Guide latch
         self.remote_paused = False
+        self.hub_mic: HubMic | None = None  # what the hub last said about its mic
         self.hub_online = False
         self._offline: asyncio.Task | None = None
         self._tasks: set[asyncio.Task] = set()
@@ -179,6 +181,13 @@ class Room:
             await self.pipeline.on_message(message)
         elif isinstance(message, ClipRequest):
             self._spawn(self._send_clip(peer, message.sentence_id))
+        elif isinstance(message, HubMic):
+            if peer is not self.hub:
+                return
+            self.hub_mic = message
+            self._broadcast(self._status())
+            log("hub_mic", conn=peer.conn, mic=message.mic, lost=message.lost,
+                interrupted=message.interrupted)  # fmt: skip
         elif isinstance(message, HOST_MESSAGES):
             if not peer.host:
                 peer.put(Error(code="not_host"))
@@ -230,6 +239,7 @@ class Room:
             log("hub_replaced", old=old.conn, new=peer.conn)
         self.hub = peer
         peer.role = "hub"
+        self.hub_mic = None  # until the new hub says
         if self._offline:
             self._offline.cancel()
             self._offline = None
@@ -240,6 +250,8 @@ class Room:
         """The hub left or was replaced: end its segment; listeners learn after a grace time."""
         await self.pipeline.on_message(Mode(mode="off"))
         self.listening = False
+        if self.hub is None:
+            self.hub_mic = None
         if offline_timer and self.hub is None:
             self._offline = asyncio.create_task(self._go_offline())
         self._broadcast(self._status())
@@ -253,8 +265,14 @@ class Room:
             log("hub_offline")
 
     def _status(self) -> HubStatus:
+        mic = self.hub_mic
         return HubStatus(
-            online=self.hub_online, listening=self.listening, remote_paused=self.remote_paused
+            online=self.hub_online,
+            listening=self.listening,
+            remote_paused=self.remote_paused,
+            mic=mic.mic if mic else "",
+            mic_lost=bool(mic and mic.lost),
+            interrupted=bool(mic and mic.interrupted),
         )
 
     # --- days ---------------------------------------------------------------------------------

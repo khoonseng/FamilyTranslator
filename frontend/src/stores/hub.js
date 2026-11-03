@@ -5,16 +5,30 @@
 // One active hub (architecture doc): Start on this page (or Become hub on a host phone, which
 // opens it) takes over from any other hub. An automatic reconnect never does: if another phone
 // took over meanwhile, this one stops and says so.
+//
+// Never deaf without saying so (weeks 6–7 step 2, see audio/micWatch.js): while listening, the
+// hub checks every few seconds, on device changes and when the page comes back, that it still
+// hears the chosen mic. A lost clip-on means the phone's own mic, a red banner and a switch
+// back when it returns; an audio engine iOS won't restart means "Tap to resume listening".
+// Host phones are told either way.
 
 import { defineStore } from "pinia";
 import { microphones } from "../audio/micSettings.js";
+import { healthPlan, micPlan, micStatus } from "../audio/micWatch.js";
 import { keepScreenOn, store, stored } from "../lib/device.js";
 import { RoomSocket } from "../lib/roomSocket.js";
+
+const CHECK_EVERY_MS = 3000;
 
 let socket = null;
 let capture = null;
 let takeover = false; // true until the first ready after Start
 let audioContext = null;
+let activeId = ""; // the input the capture actually opened ("" = the phone's default)
+let checking = false; // one check or restart at a time
+let watching = false; // the timer and listeners, set up once
+let lastReport = "";
+let listInputs = async () => microphones(await navigator.mediaDevices.enumerateDevices());
 
 // The VAD's audio engine. iOS starts an AudioContext suspended unless it is created or resumed
 // inside a tap; the VAD would make its own only after its model loads, long after the Guide
@@ -26,12 +40,19 @@ function wakeAudio() {
   if (audioContext.state !== "running") audioContext.resume().catch(() => {});
 }
 
-// Tests swap in fakes for the socket and the microphone (and its factory).
+// Tests swap in fakes for the socket, the microphone (and its factory) and the input list.
 let makeCapture = null;
 export function setHubParts(parts) {
   if ("socket" in parts) socket = parts.socket;
-  if ("capture" in parts) capture = parts.capture;
   if ("makeCapture" in parts) makeCapture = parts.makeCapture;
+  if ("listInputs" in parts) listInputs = parts.listInputs;
+  if ("audioContext" in parts) audioContext = parts.audioContext;
+  if ("capture" in parts) {
+    capture = parts.capture;
+    activeId = "";
+    checking = false;
+    lastReport = "";
+  }
 }
 
 export const useHubStore = defineStore("hub", {
@@ -50,6 +71,8 @@ export const useHubStore = defineStore("hub", {
     mics: [], // [{ id, label }] the inputs Safari lists
     micLabel: "", // the input actually in use
     level: 0, // 0..1, for the level bar
+    micLost: false, // the chosen mic (the clip-on) is gone: the phone's own mic is listening
+    needTap: false, // iOS won't restart the mic by itself: "Tap to resume listening"
     day: "",
     bubbles: [], // [{ id, sentenceIds: [] }]
     sentences: {}, // id -> { id, bubbleId, zh, yue, en, status, clip }
@@ -105,8 +128,20 @@ export const useHubStore = defineStore("hub", {
       });
       socket.connect();
       keepScreenOn();
+      this.watchMic();
       this.micError = "";
       this.screen = "hub";
+    },
+
+    // Once per page: check the mic regularly, on device changes and when the page comes back.
+    watchMic() {
+      if (watching || typeof document === "undefined") return;
+      watching = true;
+      setInterval(() => this.checkMic(), CHECK_EVERY_MS);
+      navigator.mediaDevices?.addEventListener?.("devicechange", () => this.checkMic());
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") this.checkMic({ resume: true });
+      });
     },
 
     ready(message) {
@@ -117,6 +152,8 @@ export const useHubStore = defineStore("hub", {
       }
       if (message.day !== this.day) this.newDay(message.day);
       if (this.listening) socket.sendJson({ type: "mode", mode: "guide" }); // after a reconnect
+      lastReport = ""; // the server needs to hear the mic's state again
+      this.reportMic();
     },
 
     // Another phone is the hub now: stop listening and let go of the room.
@@ -143,6 +180,7 @@ export const useHubStore = defineStore("hub", {
         await capture?.pause();
         return;
       }
+      const openId = this.micLost ? "" : this.micId;
       try {
         if (!capture) {
           // Loaded on first use: the VAD's runtime is large, and the first screens needn't wait.
@@ -151,34 +189,87 @@ export const useHubStore = defineStore("hub", {
             send: (message) => socket.sendJson(message),
             sendAudio: (buffer) => socket.sendAudio(buffer),
             audioContext,
-            deviceId: this.micId,
+            deviceId: openId,
             processing: this.processing,
             onLevel: (level) => (this.level = level),
+            onTrackChange: () => this.checkMic(),
           });
+          activeId = openId;
         }
         await capture.start();
       } catch (error) {
-        // A remembered input that is no longer plugged in: fall back to the phone's default.
-        if (error?.name === "OverconstrainedError" && this.micId) {
+        // The chosen mic isn't there (the clip-on off or out of range): the phone's own mic,
+        // with the choice kept, so the hub switches back when the clip-on returns.
+        if (error?.name === "OverconstrainedError" && openId) {
           capture = null;
-          this.setStoredMic("");
+          this.micLost = true;
           return this.setGuide(true);
         }
         this.micError = error?.name === "NotAllowedError" ? "mic-denied" : "mic-failed";
         return;
       }
       this.listening = true;
+      this.needTap = false;
       this.micLabel = capture.input.label;
       socket.sendJson({ type: "mode", mode: "guide" });
+      this.reportMic();
       await this.listMics(); // names are only known once the mic is allowed
     },
 
     async listMics() {
       try {
-        this.mics = microphones(await navigator.mediaDevices.enumerateDevices());
+        this.mics = await listInputs();
       } catch {
         this.mics = [];
       }
+    },
+
+    // Is the hub still hearing what it should? Runs every few seconds while listening, on
+    // device changes and track events, and (resume) when the page comes back from another app.
+    async checkMic({ resume = false } = {}) {
+      if (!this.listening || checking) return;
+      checking = true;
+      try {
+        let inputs;
+        try {
+          inputs = await listInputs();
+        } catch {
+          return; // no device list: nothing to compare
+        }
+        this.mics = inputs;
+        const plan = micPlan(this.micId, inputs.map((m) => m.id));
+        let health = healthPlan({ engine: audioContext?.state ?? "running", track: capture?.track });
+        if (health === "resume" && resume) {
+          await audioContext.resume().catch(() => {});
+          health = healthPlan({ engine: audioContext.state, track: capture?.track });
+        }
+        if (plan.use !== activeId || health === "reopen") {
+          this.micLost = plan.lost;
+          await this.restartCapture(); // still "checking": no second check starts meanwhile
+          return;
+        }
+        this.micLost = plan.lost;
+        this.needTap = health === "resume";
+        this.reportMic();
+      } finally {
+        checking = false;
+      }
+    },
+
+    // The "Tap to resume listening" banner: inside the tap, so iOS lets the audio engine run.
+    async tapResume() {
+      wakeAudio();
+      this.needTap = false;
+      await this.restartCapture();
+    },
+
+    // Tells the server (and so host phones) which mic the hub hears, and whether it needs a tap.
+    reportMic() {
+      const status = micStatus({ activeId, lost: this.micLost, needTap: this.needTap });
+      const text = JSON.stringify(status);
+      if (text === lastReport) return;
+      lastReport = text;
+      socket?.sendJson({ type: "hub_mic", ...status });
     },
 
     setStoredMic(id) {
@@ -190,6 +281,7 @@ export const useHubStore = defineStore("hub", {
     async setMic(id) {
       wakeAudio();
       this.setStoredMic(id);
+      this.micLost = false;
       await this.restartCapture();
     },
 
@@ -206,10 +298,16 @@ export const useHubStore = defineStore("hub", {
         capture = null;
         await old.destroy();
       }
+      activeId = "";
       this.micLabel = "";
       if (this.listening) {
         this.listening = false;
         await this.setGuide(true);
+        if (!this.listening) {
+          this.listening = true; // still latched: the mic just couldn't reopen without a tap
+          this.needTap = true;
+          this.reportMic();
+        }
       }
     },
 

@@ -15,7 +15,8 @@ const LEVEL_EVERY_MS = 100;
 
 // `audioContext` must have been created or resumed inside a tap (see the hub store): iOS keeps an
 // AudioContext made later, as the VAD's own would be, suspended, and the VAD hears nothing.
-// onLevel(0..1) feeds the hub's level bar, about ten times a second.
+// onLevel(0..1) feeds the hub's level bar, about ten times a second. onTrackChange() fires when
+// the microphone ends, mutes or unmutes (a Bluetooth clip-on lost, another app taking the mic).
 export async function createCapture({
   send,
   sendAudio,
@@ -23,6 +24,7 @@ export async function createCapture({
   deviceId = "",
   processing = true,
   onLevel = () => {},
+  onTrackChange = () => {},
 }) {
   const segmenter = new Segmenter({ send, sendAudio, redemptionMs: REDEMPTION_MS });
   let stream = null;
@@ -38,6 +40,10 @@ export async function createCapture({
     preSpeechPadMs: 0, // the segmenter keeps its own pre-roll for streaming
     getStream: async () => {
       stream = await navigator.mediaDevices.getUserMedia(micConstraints({ deviceId, processing }));
+      const track = stream.getAudioTracks()[0];
+      for (const event of ["ended", "mute", "unmute"]) {
+        track?.addEventListener(event, () => onTrackChange(event));
+      }
       return stream;
     },
     pauseStream: async () => {}, // keep the microphone open
@@ -70,6 +76,11 @@ export async function createCapture({
       const track = stream?.getAudioTracks()[0];
       const settings = track?.getSettings?.() ?? {};
       return { label: track?.label ?? "", echoCancellation: settings.echoCancellation };
+    },
+    // { state: "live" | "ended", muted }, or null before the mic is open.
+    get track() {
+      const track = stream?.getAudioTracks()[0];
+      return track ? { state: track.readyState, muted: track.muted } : null;
     },
     async start() {
       if (running) return;
