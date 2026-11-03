@@ -206,6 +206,9 @@ Build order:
     A family phone pauses its own playback while Talk records.
     The weeks 2–3 MVP-only "Earphones in" switch ends with weeks 4–5: from then on the hub
     never plays Cantonese, so it never pauses capture in phase 1.
+    The hub's "Phone voice processing" switch may turn echo cancellation (with noise
+    suppression and auto gain) off, e.g. for a plug-in clip-on mic (owner decision 2026-11-03):
+    pausing capture during playback stays the defence against loops.
 14. Zero data retention (ZDR) at every provider. No provider may keep conversation data, except
     the two Google exceptions below:
     - Google STT: sync (or streaming) requests only. Never call the async/batch endpoint and never
@@ -604,3 +607,13 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   one room (no new link for the family), and listener phones get a History screen of days,
   sessions and bubbles within the 30 days. Designed when weeks 8–10 start. Saving or exporting
   a bubble still comes after the trip.
+- 2026-11-03 — Mic settings on the hub, built ahead of the rest of weeks 6–7 (owner decision).
+  No spare phone: the owner's iPhone 14 Pro will be the hub, and the guide should wear a clip-on
+  (a DJI Mic Mini 2, bought); the weeks 6–7 plan is still under review. With the transmitter on
+  the speaker's collar, the app heard nothing beyond about 1 m from the phone, while Voice
+  Memos recorded clearly through two doors at 3 m: the iPhone receives the DJI fine, so Safari
+  with our capture settings doesn't use it. The hub gains a level bar, the name of the mic in
+  use, a mic list (remembered per phone; a missing one falls back to the phone's default) and a
+  "Phone voice processing" switch. Hard rule 13 amended: echo cancellation may be off on the
+  hub; pausing capture during playback remains the defence. Defaults stay as before until the
+  owner's test shows which combination works.

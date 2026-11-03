@@ -7,6 +7,7 @@
 // took over meanwhile, this one stops and says so.
 
 import { defineStore } from "pinia";
+import { microphones } from "../audio/micSettings.js";
 import { keepScreenOn, store, stored } from "../lib/device.js";
 import { RoomSocket } from "../lib/roomSocket.js";
 
@@ -25,10 +26,12 @@ function wakeAudio() {
   if (audioContext.state !== "running") audioContext.resume().catch(() => {});
 }
 
-// Tests swap in fakes for the socket and the microphone.
+// Tests swap in fakes for the socket and the microphone (and its factory).
+let makeCapture = null;
 export function setHubParts(parts) {
-  socket = parts.socket ?? socket;
-  capture = parts.capture ?? capture;
+  if ("socket" in parts) socket = parts.socket;
+  if ("capture" in parts) capture = parts.capture;
+  if ("makeCapture" in parts) makeCapture = parts.makeCapture;
 }
 
 export const useHubStore = defineStore("hub", {
@@ -41,6 +44,12 @@ export const useHubStore = defineStore("hub", {
     listening: false, // the Guide latch (hard rule 8)
     remotePaused: false, // a host phone paused Guide listening
     micError: "",
+    // Mic settings, remembered per phone (owner decision 2026-11-03; see audio/micSettings.js).
+    micId: stored("micId"), // "" = the phone's default input
+    processing: stored("micProcessing") !== "off", // the phone's voice processing
+    mics: [], // [{ id, label }] the inputs Safari lists
+    micLabel: "", // the input actually in use
+    level: 0, // 0..1, for the level bar
     day: "",
     bubbles: [], // [{ id, sentenceIds: [] }]
     sentences: {}, // id -> { id, bubbleId, zh, yue, en, status, clip }
@@ -137,20 +146,71 @@ export const useHubStore = defineStore("hub", {
       try {
         if (!capture) {
           // Loaded on first use: the VAD's runtime is large, and the first screens needn't wait.
-          const { createCapture } = await import("../audio/capture.js");
+          const createCapture = makeCapture ?? (await import("../audio/capture.js")).createCapture;
           capture = await createCapture({
             send: (message) => socket.sendJson(message),
             sendAudio: (buffer) => socket.sendAudio(buffer),
             audioContext,
+            deviceId: this.micId,
+            processing: this.processing,
+            onLevel: (level) => (this.level = level),
           });
         }
         await capture.start();
       } catch (error) {
+        // A remembered input that is no longer plugged in: fall back to the phone's default.
+        if (error?.name === "OverconstrainedError" && this.micId) {
+          capture = null;
+          this.setStoredMic("");
+          return this.setGuide(true);
+        }
         this.micError = error?.name === "NotAllowedError" ? "mic-denied" : "mic-failed";
         return;
       }
       this.listening = true;
+      this.micLabel = capture.input.label;
       socket.sendJson({ type: "mode", mode: "guide" });
+      await this.listMics(); // names are only known once the mic is allowed
+    },
+
+    async listMics() {
+      try {
+        this.mics = microphones(await navigator.mediaDevices.enumerateDevices());
+      } catch {
+        this.mics = [];
+      }
+    },
+
+    setStoredMic(id) {
+      this.micId = id;
+      store("micId", id);
+    },
+
+    // Inside the tap on the mic list or the switch: the mic is re-opened with the new setting.
+    async setMic(id) {
+      wakeAudio();
+      this.setStoredMic(id);
+      await this.restartCapture();
+    },
+
+    async setProcessing(on) {
+      wakeAudio();
+      this.processing = on;
+      store("micProcessing", on ? "" : "off");
+      await this.restartCapture();
+    },
+
+    async restartCapture() {
+      if (capture) {
+        const old = capture;
+        capture = null;
+        await old.destroy();
+      }
+      this.micLabel = "";
+      if (this.listening) {
+        this.listening = false;
+        await this.setGuide(true);
+      }
     },
 
     // Remote pause from a host phone: Guide off, or back on.

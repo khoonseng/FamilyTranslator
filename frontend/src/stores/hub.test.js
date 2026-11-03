@@ -16,14 +16,25 @@ class FakeSocket {
 }
 
 class FakeCapture {
-  constructor() {
+  constructor(options = {}) {
+    this.options = options;
     this.running = false;
+    this.destroyed = false;
+  }
+  get input() {
+    return { label: this.options.deviceId === "dji" ? "DJI Mic Mini 2" : "iPhone Microphone" };
   }
   async start() {
+    if (this.options.deviceId === "gone") {
+      throw Object.assign(new Error("no such input"), { name: "OverconstrainedError" });
+    }
     this.running = true;
   }
   async pause() {
     this.running = false;
+  }
+  async destroy() {
+    this.destroyed = true;
   }
 }
 
@@ -37,7 +48,7 @@ beforeEach(() => {
   setActivePinia(createPinia());
   socket = new FakeSocket();
   capture = new FakeCapture();
-  setHubParts({ socket, capture });
+  setHubParts({ socket, capture, makeCapture: null });
   hub = useHubStore();
   hub.screen = "hub";
 });
@@ -84,6 +95,37 @@ describe("hub store", () => {
     hub.receive(sentence(1));
     hub.receive(sentence(2));
     expect(hub.bubbles).toEqual([{ id: 1, sentenceIds: [1, 2] }]);
+  });
+
+  it("shows the input actually in use once listening", async () => {
+    await hub.setGuide(true);
+    expect(hub.micLabel).toBe("iPhone Microphone");
+  });
+
+  it("choosing another mic re-opens capture with it, and keeps listening", async () => {
+    let made;
+    setHubParts({ capture: null, makeCapture: async (o) => (made = new FakeCapture(o)) });
+    await hub.setGuide(true);
+    const first = made;
+    await hub.setMic("dji");
+    expect([first.destroyed, made.options.deviceId, hub.listening, hub.micLabel]).toEqual([
+      true, "dji", true, "DJI Mic Mini 2",
+    ]);
+  });
+
+  it("the voice-processing switch reaches the capture settings", async () => {
+    let made;
+    setHubParts({ capture: null, makeCapture: async (o) => (made = new FakeCapture(o)) });
+    await hub.setGuide(true);
+    await hub.setProcessing(false);
+    expect([made.options.processing, hub.processing]).toEqual([false, false]);
+  });
+
+  it("a remembered mic that is unplugged falls back to the phone's default", async () => {
+    setHubParts({ capture: null, makeCapture: async (o) => new FakeCapture(o) });
+    hub.micId = "gone";
+    await hub.setGuide(true);
+    expect([hub.micId, hub.listening, hub.micError]).toEqual(["", true, ""]);
   });
 
   it("says which sentence it has, so catch-up starts after it", () => {

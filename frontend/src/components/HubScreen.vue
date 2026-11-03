@@ -59,6 +59,35 @@ const connectionLabel = {
           : "The microphone could not start." }}
       </p>
 
+      <!-- Which mic the app hears, and how loud: a flat bar while the guide talks means the mic
+           isn't reaching the app (owner decision 2026-11-03). -->
+      <div v-if="hub.listening" class="flex items-center gap-3 text-sm text-slate-700">
+        <span class="h-3 flex-1 overflow-hidden rounded-full bg-white">
+          <span class="block h-full rounded-full bg-emerald-600 transition-[width] duration-100"
+            :style="{ width: `${Math.round(hub.level * 100)}%` }"></span>
+        </span>
+        <span class="max-w-[55%] truncate">🎙 {{ hub.micLabel || "Microphone" }}</span>
+      </div>
+      <details class="text-base text-slate-700">
+        <summary class="cursor-pointer select-none">Mic settings</summary>
+        <div class="mt-2 flex flex-col gap-3 rounded-lg bg-white p-3">
+          <label class="flex flex-col gap-1">
+            Microphone
+            <select class="rounded border border-slate-300 p-2" :value="hub.micId"
+              @change="hub.setMic($event.target.value)" @focus="hub.listMics()">
+              <option value="">Phone default</option>
+              <option v-for="mic in hub.mics" :key="mic.id" :value="mic.id">{{ mic.label }}</option>
+            </select>
+            <span class="text-sm text-slate-500">Names appear after Guide has been on once.</span>
+          </label>
+          <label class="flex items-center gap-3">
+            <input type="checkbox" class="h-5 w-5" :checked="hub.processing"
+              @change="hub.setProcessing($event.target.checked)" />
+            Phone voice processing (echo cancellation, noise suppression, auto gain)
+          </label>
+        </div>
+      </details>
+
       <form class="flex gap-2" @submit.prevent="send">
         <input v-model="typed" type="text" placeholder="输入普通话 Type Mandarin"
           class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white p-3 text-lg" />
