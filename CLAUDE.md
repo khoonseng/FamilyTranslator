@@ -21,7 +21,8 @@ phones play Cantonese audio with large-font text. All phones use Singapore roami
 - Trip: **19–23 Dec 2026** (5 days). Trip configuration incl. the always-on instance goes live 15 Dec.
 - Tech stack: **Python/FastAPI backend, Vue 3 frontend** — see "Stack" below
 - Primary translation model: **Gemini on Vertex AI** (bake-off winner; decided 2026-10-24,
-  whatever Google answers on abuse monitoring), then Qwen on Groq, then Cloud Translation
+  whatever Google answers on abuse monitoring), then Qwen and gpt-oss on Groq, then Cloud
+  Translation
 - ZDR: Google's abuse-monitoring logging for Gemini and Google's standard Text-to-Speech terms
   are accepted (owner, 2026-10-24); the two requests to Google are optional
 
@@ -92,8 +93,8 @@ Build order:
 3. Nothing is hosted in mainland China. The app is reached over SG roaming; do not add
    China-specific CDNs, ICP-dependent services or VPN logic.
 4. Cascade only: STT → translation → TTS. Translation is one LLM call per sentence (Gemini, then
-   Qwen on Groq). Only if both LLM providers fail on a sentence does Google Cloud Translation
-   translate it (two calls, `yue` and `en`, no context, literal wording). Do not use OpenAI
+   Qwen on Groq, then gpt-oss on Groq; decided 2026-11-03). Only if all three LLMs fail on a
+   sentence does Google Cloud Translation translate it (two calls, `yue` and `en`, no context, literal wording). Do not use OpenAI
    GPT-Realtime-Translate or conversational realtime models (no Cantonese output).
 5. `yue` is written as colloquial spoken Cantonese (粵語口語, e.g. 佢哋喺度等緊我哋) in Traditional
    characters, never formal written Chinese. The same string is displayed and sent to TTS.
@@ -262,15 +263,18 @@ AI providers (all must meet hard rule 14; the week-1 bake-off confirms or promot
 | Stage | Primary | Fallback (in order) |
 | --- | --- | --- |
 | STT | Google Speech-to-Text V2 `chirp_3`, **streaming**: `cmn-Hans-CN` + `yue-Hant-HK` in Guide mode, `yue-Hant-HK` + `en-US` in Family mode; glossary as phrase biasing | OpenAI `gpt-transcribe` on the saved audio segments, as both the safety net (gaps Chirp 3 left) and the fallback (stream down) |
-| Translation | Gemini 3.6 Flash on Vertex AI (bake-off winner), reasoning minimal, temperature 0.2 | Groq `qwen/qwen3.8-27b` (Preview: re-check the ID before the trip), then Google Cloud Translation v3 as last resort |
+| Translation | Gemini 3.6 Flash on Vertex AI (bake-off winner), reasoning minimal, temperature 0.2 | Groq `qwen/qwen3.8-27b` (Preview: re-check the ID before the trip), then Groq `openai/gpt-oss-120b` (reasoning low), then Google Cloud Translation v3 as last resort |
 | TTS | Google Chirp 3 HD, Cantonese voice `yue-HK-Chirp3-HD-Despina` (in-laws' pick) | Older Google voice `yue-HK-Standard-A` |
 
 Translation order (decided 2026-10-24):
 - Gemini on Vertex AI is primary: it won the bake-off, and Google's abuse-monitoring logging
   is accepted if the exception isn't granted (hard rule 14).
-- Qwen3.8-27B on Groq is the fallback; it clearly beat gpt-oss-120b. If Groq withdraws the
-  Qwen preview, `openai/gpt-oss-120b` takes its place. Re-check the Groq model ID before the trip.
-- Google Cloud Translation is the last resort when both fail (hard rule 4).
+- Qwen3.8-27B on Groq is the fallback; it clearly beat gpt-oss-120b. Re-check the Groq model ID
+  before the trip.
+- `openai/gpt-oss-120b` on Groq is the third translator (decided 2026-11-03): Groq's free-plan
+  limits apply per model, so it gives a second allowance while the Developer upgrade is
+  unavailable, and it beat Cloud Translation in the in-laws' blind test.
+- Google Cloud Translation is the last resort when all three fail (hard rule 4).
 
 Not used: Azure (one cloud only), self-hosted or on-device models (no wav2vec, no Hugging
 Face weights), Groq TTS (no Chinese voices), the Gemini API / AI Studio free tier (fails ZDR),
@@ -286,8 +290,14 @@ No subscriptions: everything is pay-as-you-go with free allowances, except Groq'
 - Day one: billing enabled on the Google Cloud project with a budget alert of about US$20/month
   (alerts warn, they don't cap). Gemini via Vertex AI pay-as-you-go. Groq on the Free plan with
   ZDR on (about 220 translations/day; spread large bake-off runs over two days).
-- Start of week 6: Groq Developer plan, OpenAI prepaid credit topped up, budget alert raised to
-  about US$80, so field tests run on the exact trip configuration.
+- Weeks 6–7 (owner decisions 2026-11-03):
+  - **GCP:** budget alert raised to about US$80/month (owner, in Billing → Budgets & alerts).
+  - **Groq:** the Developer plan is the goal, but upgrades were "temporarily unavailable due
+    to high demand" (27 Oct). Retry weekly; when it works, upgrade and confirm ZDR stays on.
+    Meanwhile gpt-oss-120b adds a second free allowance (hard rule 4).
+  - **OpenAI:** no top-up and no auto-reload before the trip (US$0.04 used of US$5 by 27 Oct;
+    auto-reload's minimum is US$5). The owner checks usage at the end of each trip day and
+    tops up by hand if needed; a purchase may take a few minutes to show.
 - 15 Dec 2026: Cloud Run `min-instances=1` (no cold starts); back to 0 on 24 Dec.
 - Expected spend: about US$5–10 for development; the 5-day trip about US$40–45 with Gemini
   primary, US$20–25 with Groq primary (scaled from the earlier 7-day estimate).
@@ -346,9 +356,8 @@ Dockerfile
       English text (closed 2026-10-27; tested on a laptop, an iPhone and an iPad: join link,
       host controls, takeover, locked screen, catch-up, replay offline, Sound off).
 - [ ] Weeks 6–7 — Switch to the trip configuration first (see "Billing and plans"). Then field
-      tests in Singapore with the family's own phones in noisy places. Compare transcripts from
-      the spare hub phone on the "guide's" lanyard against a clip-on to decide whether to buy a
-      mic. Measure time-to-first-audio on the real app (about 4.2 s in week 1, accepted) and
+      tests in Singapore with the family's own phones in noisy places, starting with a check of
+      the guide's Bluetooth clip-on (range, dropouts, battery). Measure time-to-first-audio on the real app (about 4.2 s in week 1, accepted) and
       ask the family whether it feels fast enough. Check the junk filter's provisional 15%
       against family chatter near the hub, if not done earlier. Phase 2 (family → guide) starts
       only once guide → family passes.
@@ -638,3 +647,11 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   the built-in mic silently), and the transmitter's battery. In phase 2, iOS may route the
   hub's Mandarin replies to the Bluetooth device. Chrome on iPhone is no alternative: every
   iOS browser uses WebKit.
+- 2026-11-03 — Weeks 6–7 plan approved (owner): record the decisions; gpt-oss as the third
+  translator; the hub never goes deaf without saying so (clip-on lost, back from another app,
+  shown on host phones too); automatic time-to-first-audio from listener phones; a field
+  report tool; a field-test protocol starting with a Bluetooth clip-on check. Owner decisions:
+  `openai/gpt-oss-120b` on Groq after Qwen and before Cloud Translation (hard rule 4; Groq's
+  free limits are per model and the Developer upgrade is unavailable for now); OpenAI: no
+  top-up before the trip, daily checks during it; GCP budget alert US$80; host controls first
+  tried on a host tab on the hub iPhone, the wife's phone if the hub stops listening.
