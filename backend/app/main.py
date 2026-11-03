@@ -6,7 +6,7 @@ and API token; /openapi.json and every API endpoint need the API token (X-API-To
 ?t=).
 Open: /health, /docs (an empty shell that asks for the token) and the page's own files, also
 served at /join (the join link, /join#<room token>: the phone never sends what follows the #)
-/listen and /host.
+/listen, /host and /mictest.
 
 Run locally: cd backend && uv run uvicorn app.main:app --reload --port 8000
 """
@@ -140,6 +140,12 @@ def listen_page() -> FileResponse:
 @app.get("/host", include_in_schema=False)
 def host_page() -> FileResponse:
     """The owner's and wife's listener page; it signs in with the PIN and API token."""
+    return _app_page()
+
+
+@app.get("/mictest", include_in_schema=False)
+def mic_test_page() -> FileResponse:
+    """Which mic Safari really captures; runs on the phone only, nothing is sent."""
     return _app_page()
 
 
