@@ -69,8 +69,9 @@ Build order:
   and text out. English text next, if time permits.
 - **Phase 2:** family → guide. Family members talk (push-to-talk, Cantonese or English) or type
   on their own phones (hub PIN required); the hub plays the Mandarin once the guide is quiet.
-  The guide always has priority (hard rules 8 and 13). Built only after phase 1 passes its
-  field test; if it slips, the owner and wife interpret replies.
+  The guide always has priority (hard rules 8 and 13). Built after the owner's Bluetooth
+  clip-on check (session 0), before the family field test, which then covers both phases
+  (owner decision 2026-11-03); if it slips, the owner and wife interpret replies.
 
 ## Hard rules (do not break without explicit approval)
 
@@ -355,15 +356,15 @@ Dockerfile
 - [x] Weeks 4–5 — Rooms, WebSocket fan-out, listener PWA, player states, cache, backfill;
       English text (closed 2026-10-27; tested on a laptop, an iPhone and an iPad: join link,
       host controls, takeover, locked screen, catch-up, replay offline, Sound off).
-- [ ] Weeks 6–7 — Switch to the trip configuration first (see "Billing and plans"). Then field
-      tests in Singapore with the family's own phones in noisy places, starting with a check of
-      the guide's Bluetooth clip-on (range, dropouts, battery). Measure time-to-first-audio on the real app (about 4.2 s in week 1, accepted) and
-      ask the family whether it feels fast enough. Check the junk filter's provisional 15%
-      against family chatter near the hub, if not done earlier. Phase 2 (family → guide) starts
-      only once guide → family passes.
+- [ ] Weeks 6–7 — Trip configuration and field tests, reordered (owner decision 2026-11-03):
+      (1) trip configuration (gpt-oss, hub never deaf; done); (2) session 0, the owner's check
+      of the guide's Bluetooth clip-on (range, dropouts, battery); (3) phase 2 (family →
+      guide), starting in plan mode; (4) one family field test in noisy places covering both
+      phases: time-to-first-audio and whether it feels fast enough, the junk filter's
+      provisional 15% against family chatter, and replies to the guide.
 - [ ] Weeks 8–10 (30 Nov–18 Dec) — Buffer, fixes, sessions and History (named sessions inside
-      the one room, a History screen to revisit them within 30 days; decided 2026-10-27), phase 2
-      if guide → family has passed, family briefing (incl.: the hub phone runs only the hub page). 15 Dec: `min-instances=1` on. Trip 19–23 Dec; `min-instances=0` on 24 Dec.
+      the one room, a History screen to revisit them within 30 days; decided 2026-10-27), family
+      briefing (incl.: the hub phone runs only the hub page). 15 Dec: `min-instances=1` on. Trip 19–23 Dec; `min-instances=0` on 24 Dec.
 
 ## Working agreement
 
@@ -655,3 +656,13 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   free limits are per model and the Developer upgrade is unavailable for now); OpenAI: no
   top-up before the trip, daily checks during it; GCP budget alert US$80; host controls first
   tried on a host tab on the hub iPhone, the wife's phone if the hub stops listening.
+- 2026-11-03 — Weeks 6–7 reordered (owner decision; supersedes "phase 2 only after phase 1
+  passes its field test"): after the trip configuration, the owner runs session 0 (the
+  Bluetooth clip-on's range, dropouts and battery, alone, no family); then phase 2 is built,
+  starting in plan mode; then one family field test covers both phases. Reasons: one family
+  outing instead of two; phase 2 changes the hub (it plays Mandarin, and with the Bluetooth
+  clip-on connected iOS may route that sound to it), so testing the hub before it exists would
+  test a setup about to change; about two weeks ahead of schedule, December still leaves room
+  for fixes. Also skipped: phone reports of time-to-first-audio (estimated from existing
+  server logs instead); the field report tool is built just before the family test, or the
+  sessions are analysed by hand.
