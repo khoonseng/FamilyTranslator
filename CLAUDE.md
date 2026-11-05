@@ -673,3 +673,12 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   the trip: the hub iPhone stays within about 10 m of the guide. Not yet run, moved to the
   family field test: the WeChat app-switch, voice processing on vs off, an hour's battery, and
   re-pairing on the wife's phone. Next: phase 2, in plan mode.
+- 2026-11-05 — Phase 2 plan approved (owner): replies from the in-laws' and siblings' phones
+  (hub PIN on the family page, no host controls), spoken (hold to talk, 30 s) or typed, in
+  Cantonese or English; the Mandarin plays from the hub iPhone so the guide is hands-free; voice
+  `cmn-CN-Chirp3-HD-Kore` for now (fallback `cmn-CN-Standard-A`), to be revisited. Spike on the
+  owner's iPhone (`/mictest`): while the Bluetooth clip-on is open as the mic, no sound plays
+  at all (iOS routes it to the clip-on), even with capture paused; with the mic fully stopped,
+  a Mandarin sample plays from the loudspeaker at normal volume, clear at 1–2 m, with no audio
+  session switch, and the clip-on reopens fine afterwards. So the hub plays each reply by
+  fully stopping the clip-on, playing, then reopening it (half-duplex, hard rule 13).
