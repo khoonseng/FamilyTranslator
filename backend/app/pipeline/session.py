@@ -75,6 +75,7 @@ class _Reply:
     """One family member's hold-to-talk recording (phase 2)."""
 
     chirp: object  # ChirpStream (or a fake in tests)
+    asker: str = ""  # the phone's device id, for "You"
     pcm: bytearray = field(default_factory=bytearray)
 
 
@@ -313,10 +314,10 @@ class Pipeline:
 
     # --- family replies (phase 2) -------------------------------------------------------------
 
-    def reply_start(self, key: str) -> None:
-        """Hold to talk on a family phone (`key`: its connection)."""
+    def reply_start(self, key: str, asker: str = "") -> None:
+        """Hold to talk on a family phone (`key`: its connection; `asker`: its device id)."""
         self.reply_end(key)  # a talk_end that never came
-        self.replies[key] = _Reply(self.p.stt.open(self.stt_cfg["family_languages"]))
+        self.replies[key] = _Reply(self.p.stt.open(self.stt_cfg["family_languages"]), asker)
 
     def reply_audio(self, key: str, pcm: bytes) -> bool:
         """Feeds the phone's recording; False once it is over (unknown, or at the cap)."""
@@ -338,9 +339,9 @@ class Pipeline:
         if reply is not None:
             self._spawn(self._finish_reply(key, reply))
 
-    def reply_text(self, text: str) -> None:
+    def reply_text(self, text: str, asker: str = "") -> None:
         """A typed reply: no speech-to-text."""
-        self._dispatch(text.strip(), self.bubbles.reply(), stt="typed", kind="reply")
+        self._dispatch(text.strip(), self.bubbles.reply(), "typed", kind="reply", asker=asker)
 
     async def _finish_reply(self, key: str, reply: _Reply) -> None:
         await reply.chirp.close()
@@ -373,11 +374,13 @@ class Pipeline:
         text = joiner.join(texts)
         log("reply_heard", conn=key, audio_s=round(audio_s, 1), stt=stt, kept=bool(text))
         if text:
-            self._dispatch(text, self.bubbles.reply(), stt=stt, kind="reply")
+            self._dispatch(text, self.bubbles.reply(), stt, kind="reply", asker=reply.asker)
 
     # --- one sentence -------------------------------------------------------------------------
 
-    def _dispatch(self, zh: str, bubble_hint: int, stt: str, kind: str = "guide") -> None:
+    def _dispatch(  # noqa: PLR0913
+        self, zh: str, bubble_hint: int, stt: str, kind: str = "guide", asker: str = ""
+    ) -> None:
         sentence_id = self._next_id
         self._next_id += 1
         bubble = self.bubbles.on_sentence(bubble_hint)
@@ -389,13 +392,13 @@ class Pipeline:
         self._text_done, self._clip_done = loop.create_future(), loop.create_future()
         self._spawn(
             self._process(
-                sentence_id, bubble, zh, context, stt, kind,
+                sentence_id, bubble, zh, context, stt, kind, asker,
                 text_prev, self._text_done, clip_prev, self._clip_done,
             )
         )  # fmt: skip
 
     async def _process(  # noqa: PLR0913
-        self, sentence_id, bubble, zh, context, stt, kind,
+        self, sentence_id, bubble, zh, context, stt, kind, asker,
         text_prev, text_mine, clip_prev, clip_mine,
     ) -> None:  # fmt: skip
         started = perf_counter()
@@ -423,6 +426,7 @@ class Pipeline:
                         status="ok" if translation else "no_translation",
                         provider=translation.provider if translation else "",
                         stt=stt,
+                        asker=asker,
                     )
                 )
             finally:

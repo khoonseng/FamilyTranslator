@@ -14,7 +14,8 @@
 - Host controls (remote pause, the join link) are refused for other phones.
 - Family replies (phase 2): a phone that gave the hub PIN may talk or type to the guide. Talk
   starts only when the guide has been quiet for `guide_quiet_s` (the hub's segments say when
-  he speaks), then runs to its end; typing works any time. A reply's Mandarin clip goes to
+  he speaks) and no other phone is talking (one at a time), then runs to its end; typing works
+  any time. A reply's Mandarin clip goes to
   the hub only. Become hub on a
   host phone opens the hub page, which takes over like any hub's Start.
 
@@ -81,6 +82,7 @@ class Peer:
     sent: int = 0
     talk: bool = False  # gave the hub PIN: may reply to the guide (phase 2)
     talking: bool = False  # holding Talk now
+    device: str = ""  # the phone's random id: its own replies say "You"
 
     def put(self, message: BaseModel, audio: bytes | None = None) -> None:
         self.queue.put_nowait((message.model_dump_json(), audio))
@@ -109,6 +111,7 @@ class Room:
         self.hub_mic: HubMic | None = None  # what the hub last said about its mic
         self.guide_talking = False  # the guide speaks, or stopped less than guide_quiet_s ago
         self._quiet: asyncio.Task | None = None
+        self.talker: Peer | None = None  # the family phone holding Talk (one at a time)
         self.hub_online = False
         self._offline: asyncio.Task | None = None
         self._tasks: set[asyncio.Task] = set()
@@ -149,6 +152,7 @@ class Room:
         close=None,
         takeover=False,
         talk=False,
+        device="",
     ) -> Peer:
         """`takeover`: a hub's Start or Become hub. Without it (an automatic reconnect), a hub
         joins as a listener if another phone is the hub now."""
@@ -158,6 +162,7 @@ class Room:
             log("hub_reconnect_declined", conn=conn)
         peer = Peer(conn, "listener", host, send_text, send_bytes, close)
         peer.talk = talk or host
+        peer.device = device
         if day != self.day:
             last_id = 0  # the phone's bubbles are from another day: it clears them
         latest = next(reversed(self.history), 0)
@@ -185,8 +190,7 @@ class Room:
     async def leave(self, peer: Peer) -> None:
         self.peers.discard(peer)
         if peer.talking:  # what they said so far still goes to the guide
-            peer.talking = False
-            self.pipeline.reply_end(peer.conn)
+            self._talk_over(peer)
         if peer.task:
             peer.task.cancel()
         if peer is self.hub:
@@ -242,7 +246,7 @@ class Room:
         if peer is self.hub:
             self.pipeline.on_audio(pcm)
         elif peer.talking and not self.pipeline.reply_audio(peer.conn, pcm):
-            peer.talking = False  # the 30 s cap: the recording has been sent on
+            self._talk_over(peer)  # the 30 s cap: the recording has been sent on
 
     # --- family replies (phase 2) ---------------------------------------------------------------
 
@@ -253,21 +257,35 @@ class Room:
             return
         self._check_day()
         if isinstance(message, TalkStart):
-            if self.guide_talking:  # the guide has priority (hard rule 8)
-                peer.put(Error(code="guide_talking"))
-                log("talk_refused", conn=peer.conn)
+            refusal = (
+                "guide_talking" if self.guide_talking  # the guide has priority (hard rule 8)
+                else "someone_talking" if self.talker not in (None, peer)  # one at a time
+                else ""
+            )  # fmt: skip
+            if refusal:
+                peer.put(Error(code=refusal))
+                log("talk_refused", conn=peer.conn, reason=refusal)
                 return
             peer.talking = True
-            self.pipeline.reply_start(peer.conn)
+            self.talker = peer
+            self.pipeline.reply_start(peer.conn, peer.device)
+            self._broadcast(self._status())
             log("talk_start", conn=peer.conn)
         elif isinstance(message, TalkEnd):
             if peer.talking:
-                peer.talking = False
-                self.pipeline.reply_end(peer.conn)
+                self._talk_over(peer)
                 log("talk_end", conn=peer.conn)
         else:
-            self.pipeline.reply_text(message.text)
+            self.pipeline.reply_text(message.text, peer.device)
             log("reply_typed", conn=peer.conn)
+
+    def _talk_over(self, peer: Peer) -> None:
+        """The recording goes to the guide, and the floor opens for the next phone."""
+        peer.talking = False
+        self.pipeline.reply_end(peer.conn)
+        if self.talker is peer:
+            self.talker = None
+            self._broadcast(self._status())
 
     def _guide_speaking(self) -> None:
         if self._quiet:
@@ -365,6 +383,7 @@ class Room:
             mic_lost=bool(mic and mic.lost),
             interrupted=bool(mic and mic.interrupted),
             guide_talking=self.guide_talking,
+            family_talking=self.talker is not None,
         )
 
     # --- days ---------------------------------------------------------------------------------
@@ -384,6 +403,9 @@ class Room:
         self.clips.clear()
         self._spawn(self._save_usage(self._usage_name(), self.meter))
         self.pipeline = self._new_pipeline()
+        # A family member still holding Talk across midnight: their recording carries on in the
+        # new day and is saved there, instead of being lost with yesterday's pipeline.
+        self.pipeline.replies, old.replies = old.replies, {}
         self._use_meter(Meter())
         self._spawn(self.pipeline.start())
         self._broadcast(DayChange(day=today))

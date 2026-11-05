@@ -18,7 +18,9 @@ class Hello(BaseModel):
     it already has, for catch-up. Sentence numbers restart each day.
     `takeover` (hub only): true when someone tapped Start or Become hub, which replaces the
     current hub; false on an automatic reconnect, which never displaces another phone that took
-    over meanwhile (e.g. while the old hub was in a dead zone): it joins as a listener."""
+    over meanwhile (e.g. while the old hub was in a dead zone): it joins as a listener.
+    `device`: a random id the phone keeps, so its own replies can say "You" (phase 2); it
+    names no one and is never logged."""
 
     type: Literal["hello"] = "hello"
     role: Literal["hub", "listener"]
@@ -28,6 +30,7 @@ class Hello(BaseModel):
     day: str = ""
     last_id: int = Field(default=0, ge=0)
     takeover: bool = False
+    device: str = Field(default="", max_length=40)
 
 
 class Mode(BaseModel):
@@ -82,7 +85,8 @@ class LinkRequest(BaseModel):
 class TalkStart(BaseModel):
     """A family phone with the hub PIN (phase 2): hold to talk has started. Its PCM frames
     follow as binary frames, then `talk_end`. Refused while the guide is talking or has been
-    quiet for less than 2 s (hard rule 8); once started, it runs to the end, at most 30 s."""
+    quiet for less than 2 s (hard rule 8), or while another phone is talking (one at a time,
+    owner decision 2026-11-05); once started, it runs to the end, at most 30 s."""
 
     type: Literal["talk_start"] = "talk_start"
 
@@ -189,6 +193,8 @@ class HubStatus(BaseModel):
     interrupted: bool = False
     # The guide is speaking, or stopped less than 2 s ago: Talk can't start (phase 2).
     guide_talking: bool = False
+    # A family phone holds Talk: the others wait (one at a time); typing stays open.
+    family_talking: bool = False
 
 
 class GuideRemote(BaseModel):
@@ -225,6 +231,7 @@ class Sentence(BaseModel):
     # `english` message that follows carries the family's other language.
     kind: Literal["guide", "reply"] = "guide"
     mandarin: str = ""
+    asker: str = ""  # the replying phone's `device` id, so that phone can show "You"
 
 
 class Clip(BaseModel):

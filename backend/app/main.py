@@ -181,7 +181,7 @@ async def room_socket(ws: WebSocket) -> None:
     the_room = await room()
     peer = the_room.join(
         conn, hello.role, host, hello.day, hello.last_id, ws.send_text, ws.send_bytes, ws.close,
-        takeover=hello.takeover, talk=talk,
+        takeover=hello.takeover, talk=talk, device=hello.device,
     )  # fmt: skip
     try:
         while True:

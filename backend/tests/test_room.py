@@ -165,6 +165,7 @@ async def test_a_host_can_pause_and_resume_guide_remotely():
     assert host_phone.last("hub_status") == {
         "type": "hub_status", "online": True, "listening": True, "remote_paused": False,
         "mic": "", "mic_lost": False, "interrupted": False, "guide_talking": False,
+        "family_talking": False,
     }  # fmt: skip
 
 
@@ -474,3 +475,68 @@ async def test_a_phone_leaving_mid_talk_still_sends_what_it_said():
     await room.leave(asker)
     await settle()
     assert hub_phone.last("sentence")["zh"] == "唔該。"
+
+
+async def test_one_phone_talks_at_a_time_and_typing_stays_open():
+    stt = FakeStt()
+    room = await make_room(stt=stt)
+    join(room, "hub", host=True)
+    first, _ = join(room, talk=True)
+    second, second_phone = join(room, talk=True)
+    await room.handle(first, TalkStart())
+    await settle(0.01)
+    assert second_phone.last("hub_status")["family_talking"] is True
+    await room.handle(second, TalkStart())
+    await room.handle(second, ReplyText(text="我打字問。"))  # typing works meanwhile
+    await settle()
+    assert second_phone.last("error")["code"] == "someone_talking"
+    assert any(m["zh"] == "我打字問。" for m in second_phone.of("sentence"))
+    await room.handle(first, TalkEnd())
+    await settle(0.01)
+    assert second_phone.last("hub_status")["family_talking"] is False
+    await room.handle(second, TalkStart())  # the floor is free again
+    assert second.talking
+
+
+async def test_the_floor_opens_when_the_talker_leaves():
+    room = await make_room()
+    join(room, "hub", host=True)
+    first, _ = join(room, talk=True)
+    second, _ = join(room, talk=True)
+    await room.handle(first, TalkStart())
+    await room.leave(first)
+    await room.handle(second, TalkStart())
+    assert second.talking
+
+
+async def test_a_reply_carries_the_askers_device_id_for_you():
+    room = await make_room()
+    join(room, "hub", host=True)
+    asker = room.join(
+        "asker", "listener", False, room.day, 0, Phone().send_text, Phone().send_bytes,
+        talk=True, device="phone-abc",
+    )  # fmt: skip
+    _, other = join(room)
+    await room.handle(asker, ReplyText(text="唔該。"))
+    await settle()
+    assert other.last("sentence")["asker"] == "phone-abc"
+
+
+async def test_talk_across_midnight_is_kept_and_saved_in_the_new_day():
+    clock = {"day": "2026-12-19"}
+    stt = FakeStt()
+    room = await make_room(stt=stt, today=lambda: clock["day"])
+    join(room, "hub", host=True)
+    asker, phone = join(room, talk=True)
+    await room.handle(asker, TalkStart())  # 23:59:55
+    room.on_audio(asker, bytes(5 * 32_000))
+    clock["day"] = "2026-12-20"  # midnight
+    room.on_audio(asker, bytes(15 * 32_000))  # 00:00:15: still recording
+    reply = stt.streams[-1]
+    assert len(reply.sent) == 20 * 32_000  # nothing lost across midnight
+    reply.final("我哋聽日幾點出發？")
+    await room.handle(asker, TalkEnd())
+    await settle()
+    assert room.day == "2026-12-20"
+    assert phone.last("sentence")["id"] == 1  # the new day's first entry
+    assert await room.store.load_day("2026-12-20")

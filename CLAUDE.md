@@ -682,3 +682,11 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   a Mandarin sample plays from the loudspeaker at normal volume, clear at 1–2 m, with no audio
   session switch, and the clip-on reopens fine afterwards. So the hub plays each reply by
   fully stopping the clip-on, playing, then reopening it (half-duplex, hard rule 13).
+- 2026-11-05 — Phase 2 replies, owner decisions: Talk is checked against the guide only when it
+  starts (2 s of guide quiet); once started it runs to its end or the 30 s cap, even if the
+  guide speaks again (both are captured, in order). **One phone talks at a time**: while one
+  holds Talk, the others show "Someone is asking…" and wait; typing stays open to everyone.
+  Replies look **WhatsApp-style**: the guide's bubbles on the left, family replies on the right
+  in green with a label, **"You"** on the asker's own phone (each phone sends an anonymous random
+  id; no names) and "Family" on the others. A recording across midnight is kept and saved as
+  the new day's first entry.

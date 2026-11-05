@@ -122,7 +122,8 @@ Family members reply from their own phones, by talking or typing; the hub on the
   - The hub tells the server when the guide is speaking, from its own voice-activity detection.
   - While the guide speaks, listener phones show "Guide is speaking…" and Talk won't start.
   - Talk becomes available after the guide has been quiet for **2 s**, the same pause that starts a new bubble, so nobody grabs the short gap between two of the guide's sentences.
-  - Once a family member has started, they can finish even if the guide starts again: the guide is captured by the hub, so nothing of his is lost.
+  - Once a family member has started, they can finish even if the guide starts again: the guide is captured by the hub, so nothing of his is lost. The check happens only when Talk starts.
+  - **One phone talks at a time** (decided 5 Nov): while one holds Talk, the others show "有人問緊 · Someone is asking…" and wait, usually a few seconds. The guide hears one question at a time, and two people side by side can't be picked up by each other's phones.
   - If the guide narrates without pausing, Talk keeps waiting and typing is the way in.
 - **Half-duplex on the listener phone:** while Talk records, the phone pauses its own playback (and any locked-screen keep-alive) and resumes afterwards (hard rule 13).
 
@@ -130,6 +131,11 @@ Family members reply from their own phones, by talking or typing; the hub on the
 
 - Typing works at any time, whether or not the guide is talking.
 - Typed and spoken replies and the guide's sentences appear on every screen in order of arrival, each as its own bubble.
+- **Looks like WhatsApp** (decided 5 Nov):
+  - **The guide's bubbles** sit on the left, in white.
+  - **Family replies** sit on the right, in green, showing what was said and its translation into the family's other language.
+  - **Labels:** "你 · You" on the asker's own phone, and "家人 · Family" on the others. Each phone sends an anonymous random id, so no names are involved.
+  - **On the hub,** the reply's Mandarin shows large.
 
 **Mandarin replies on the hub**
 
