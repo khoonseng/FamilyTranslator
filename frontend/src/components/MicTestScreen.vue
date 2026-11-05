@@ -4,6 +4,10 @@
 // bugs 211192 and 282939). This page opens the mic with the hub's settings, optionally with a
 // user-reported audio-session trick, shows live levels, and records 10 s to play back on the
 // phone, so you can hear which mic was used. Nothing is sent anywhere: no server, no pipeline.
+//
+// Phase 2 spike (5 Nov): "Play test sound" checks where iOS sends the phone's sound while the
+// Bluetooth clip-on is the mic: with the mic running, with capture paused (stream still open),
+// or with the mic stopped. The hub must play Mandarin replies through its own speaker.
 import { onBeforeUnmount, ref } from "vue";
 import { levelOf, micConstraints, microphones } from "../audio/micSettings.js";
 
@@ -30,6 +34,58 @@ const hasSession = typeof navigator !== "undefined" && "audioSession" in navigat
 let ctx = null;
 let stream = null;
 let frame = 0;
+let source = null;
+const paused = ref(false);
+const tone = new Audio();
+
+// Two seconds of a 660 Hz tone, made on the phone (a WAV), loud enough to hear across a room.
+const toneUrl = (() => {
+  const rate = 16000;
+  const samples = rate * 2;
+  const buffer = new ArrayBuffer(44 + samples * 2);
+  const view = new DataView(buffer);
+  const text = (offset, s) => [...s].forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)));
+  text(0, "RIFF");
+  view.setUint32(4, 36 + samples * 2, true);
+  text(8, "WAVEfmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  text(36, "data");
+  view.setUint32(40, samples * 2, true);
+  for (let i = 0; i < samples; i++) {
+    view.setInt16(44 + i * 2, Math.sin((2 * Math.PI * 660 * i) / rate) * 0.5 * 0x7fff, true);
+  }
+  return () => URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+})();
+
+// Inside a tap. Notes which state the mic was in, so the log says which variant was tried.
+function playTone() {
+  const state = !stream ? "mic stopped" : paused.value ? "capture paused" : "mic running";
+  tone.src = toneUrl();
+  tone.play().then(
+    () => note(`test sound playing (${state}): where do you hear it?`),
+    (error) => note(`test sound failed (${state}): ${error.name}`),
+  );
+}
+
+// Like the hub's half-duplex pause: the mic stream stays open, nothing is listened to.
+function togglePause() {
+  if (!source) return;
+  if (paused.value) {
+    source.connect(splitterNode);
+    note("capture resumed");
+  } else {
+    source.disconnect();
+    note("capture paused (stream still open)");
+  }
+  paused.value = !paused.value;
+}
+let splitterNode = null;
 
 function note(text) {
   log.value.unshift(`${new Date().toLocaleTimeString()}  ${text}`);
@@ -54,8 +110,9 @@ async function openMic() {
 }
 
 function attachMeter() {
-  const source = ctx.createMediaStreamSource(stream);
+  source = ctx.createMediaStreamSource(stream);
   const splitter = ctx.createChannelSplitter(2);
+  splitterNode = splitter;
   const silent = ctx.createGain();
   silent.gain.value = 0; // Safari only runs nodes that lead to the output
   source.connect(splitter);
@@ -112,6 +169,8 @@ function stop() {
   stream = null;
   ctx?.close();
   ctx = null;
+  source = splitterNode = null;
+  paused.value = false;
   running.value = false;
   levels.value = [0, 0];
   if (hasSession && trick.value !== "none") {
@@ -197,6 +256,16 @@ onBeforeUnmount(stop);
           <span class="block h-full rounded-full bg-emerald-600" :style="{ width: `${Math.round(level * 100)}%` }"></span>
         </span>
       </div>
+    </div>
+
+    <div class="flex gap-2">
+      <button class="flex-1 rounded-xl bg-amber-500 p-3 text-lg font-semibold text-white" @click="playTone">
+        Play test sound
+      </button>
+      <button class="flex-1 rounded-xl border border-slate-300 p-3 text-lg disabled:opacity-40"
+        :disabled="!running" @click="togglePause">
+        {{ paused ? "Resume capture" : "Pause capture" }}
+      </button>
     </div>
 
     <audio v-if="recordingUrl" :src="recordingUrl" controls class="w-full"></audio>
