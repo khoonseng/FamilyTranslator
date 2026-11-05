@@ -263,6 +263,20 @@ describe("hub store: family replies (phase 2)", () => {
     expect([hub.listening, made === before, hub.replyPlaying]).toEqual([true, false, null]);
   });
 
+  it("with Guide off, the paused mic is fully released before a reply, and stays closed after", async () => {
+    let made;
+    setHubParts({ capture: null, makeCapture: async (o) => (made = new FakeCapture(o)) });
+    await hub.setGuide(true);
+    await hub.setGuide(false); // pauses: the clip-on stays open
+    const before = made;
+    hub.receive(reply(5));
+    hub.receiveClip(5, new ArrayBuffer(4), { for_hub: true });
+    await new Promise((r) => setTimeout(r));
+    expect([before.destroyed, replyOutput.played]).toEqual([true, [5]]);
+    await hub.replyPlayer().ended(5);
+    expect([hub.listening, made === before, hub.replyPlaying]).toEqual([false, true, null]);
+  });
+
   it("a tap stops the reply", async () => {
     hub.receive(reply(5));
     hub.receiveClip(5, new ArrayBuffer(4), { for_hub: true });

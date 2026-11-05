@@ -15,10 +15,12 @@ beforeEach(() => {
 });
 
 describe("ReplyPlayer", () => {
-  it("with Guide off, a reply plays at once, with no mic to release", async () => {
+  it("with Guide off, a reply plays at once, but the paused mic is still released first", async () => {
     player.add(1, "mp3");
-    await Promise.resolve();
-    expect(log).toEqual(["play 1"]);
+    await new Promise((r) => setTimeout(r));
+    expect(log).toEqual(["mic off", "play 1"]);
+    await player.ended(1);
+    expect(log).toEqual(["mic off", "play 1", "mic on"]); // the hub reopens only if Guide is on
   });
 
   it("waits for 2 s of guide quiet, releases the mic, plays, then reopens the mic", async () => {
