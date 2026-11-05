@@ -666,3 +666,10 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   for fixes. Also skipped: phone reports of time-to-first-audio (estimated from existing
   server logs instead); the field report tool is built just before the family test, or the
   sessions are analysed by hand.
+- 2026-11-05 — Session 0 (owner, revision 00010): the guide's Bluetooth clip-on works to about
+  10 m, including with the speaker's back to the phone; beyond 10 m nothing is heard. Dropouts
+  are caught: the hub's "Clip-on mic lost" banner appeared and it switched back to the clip-on
+  by itself once in range (twice, 26–35 s after the drop; the server logged both). The rule for
+  the trip: the hub iPhone stays within about 10 m of the guide. Not yet run, moved to the
+  family field test: the WeChat app-switch, voice processing on vs off, an hour's battery, and
+  re-pairing on the wife's phone. Next: phase 2, in plan mode.
