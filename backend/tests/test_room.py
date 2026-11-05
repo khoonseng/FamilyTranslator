@@ -10,7 +10,11 @@ from app.schemas import (
     HubMic,
     LinkRequest,
     Mode,
+    ReplyText,
+    SegmentEnd,
     SegmentStart,
+    TalkEnd,
+    TalkStart,
     TypedText,
 )
 from app.storage.store import MemoryStore, RoomStore
@@ -43,6 +47,7 @@ async def make_room(hub_offline_s=0.05, store=None, today=None, clips_in_memory=
     cfg = copy.deepcopy(config.load())
     cfg["rooms"]["hub_offline_s"] = hub_offline_s
     cfg["rooms"]["clips_in_memory"] = clips_in_memory
+    cfg["rooms"]["guide_quiet_s"] = 0.05  # Talk opens after this much guide silence
     cfg["pipeline"]["echo_max_mismatch"] = 0.0  # the fake translator would look like echoes
     store = store or RoomStore(MemoryStore())
     room = Room(fake_providers(**providers), cfg, store, today or (lambda: "2026-12-19"))
@@ -60,13 +65,16 @@ class Closer:
 
 
 def join(  # noqa: PLR0913
-    room, role="listener", host=False, last_id=0, phone=None, day=None, closer=None, takeover=True
-):
-    """A hub here taps Start (takeover) unless the test says it is an automatic reconnect."""
+    room, role="listener", host=False, last_id=0, phone=None, day=None, closer=None, takeover=True,
+    talk=False,
+):  # fmt: skip
+    """A hub here taps Start (takeover) unless the test says it is an automatic reconnect.
+    `talk`: a family phone that gave the hub PIN (phase 2)."""
     phone = phone or Phone()
     peer = room.join(
         f"{role}-{id(phone)}", role, host, room.day if day is None else day, last_id,
         phone.send_text, phone.send_bytes, closer.close if closer else None, takeover=takeover,
+        talk=talk,
     )  # fmt: skip
     return peer, phone
 
@@ -107,7 +115,8 @@ async def test_a_late_phone_catches_up_from_its_last_sentence():
     _, late = join(room, last_id=1)
     await settle()
     assert late.messages[0] == {
-        "type": "ready", "role": "listener", "host": False, "day": "2026-12-19", "latest_id": 3,
+        "type": "ready", "role": "listener", "host": False, "talk": False, "day": "2026-12-19",
+        "latest_id": 3,
     }  # fmt: skip
     assert [m["zh"] for m in late.of("sentence")] == ["第二句话。", "第三句话。"]
     assert [m["sentence_id"] for m in late.of("clip")] == [2, 3]
@@ -155,7 +164,7 @@ async def test_a_host_can_pause_and_resume_guide_remotely():
     assert hub_phone.last("guide_remote")["paused"] is False
     assert host_phone.last("hub_status") == {
         "type": "hub_status", "online": True, "listening": True, "remote_paused": False,
-        "mic": "", "mic_lost": False, "interrupted": False,
+        "mic": "", "mic_lost": False, "interrupted": False, "guide_talking": False,
     }  # fmt: skip
 
 
@@ -373,3 +382,95 @@ async def test_the_days_usage_survives_a_restart():
     await settle(0.1)
     restarted = await make_room(store=store)
     assert restarted.meter.to_dict() == {"tts": {"yue-HK-Chirp3-HD-Despina": 100_000}}
+
+
+# --- family replies (phase 2) -------------------------------------------------------------------
+
+
+async def test_only_phones_with_the_hub_pin_may_reply():
+    room = await make_room()
+    join(room, "hub", host=True)
+    family, phone = join(room)  # the join link only
+    await room.handle(family, ReplyText(text="幾點集合？"))
+    await room.handle(family, TalkStart())
+    await settle()
+    assert [m["code"] for m in phone.of("error")] == ["not_allowed", "not_allowed"]
+    assert phone.of("sentence") == []
+
+
+async def test_a_typed_reply_reaches_everyone_and_its_mandarin_only_the_hub():
+    room = await make_room()
+    hub, hub_phone = join(room, "hub", host=True)
+    asker, asker_phone = join(room, talk=True)
+    _, other = join(room)
+    await room.handle(asker, ReplyText(text="幾點集合？"))
+    await settle()
+    for phone in (hub_phone, asker_phone, other):
+        sentence = phone.last("sentence")
+        assert (sentence["kind"], sentence["zh"], sentence["mandarin"]) == (
+            "reply", "幾點集合？", "普:幾點集合？",
+        )  # fmt: skip
+        assert phone.last("english")["en"] == "other:幾點集合？"
+    assert hub_phone.last("clip")["for_hub"] is True
+    assert "mp3:普:幾點集合？".encode() in hub_phone.messages
+    for phone in (asker_phone, other):  # listeners hear Cantonese only, never the Mandarin
+        assert phone.of("clip") == [] and not any(isinstance(m, bytes) for m in phone.messages)
+
+
+async def test_talk_waits_until_the_guide_has_been_quiet_then_runs_to_its_end():
+    stt = FakeStt()
+    room = await make_room(stt=stt)
+    hub, _ = join(room, "hub", host=True)
+    await room.handle(hub, Mode(mode="guide"))
+    asker, phone = join(room, talk=True)
+    await room.handle(hub, SegmentStart(pause_s=3))  # the guide speaks
+    await settle(0.01)
+    assert phone.last("hub_status")["guide_talking"] is True
+    await room.handle(asker, TalkStart())
+    await settle(0.01)
+    assert phone.last("error")["code"] == "guide_talking"
+    await room.handle(hub, SegmentEnd())
+    await settle(0.01)
+    await room.handle(asker, TalkStart())  # under 2 s (here 0.05 s) since the guide stopped
+    await settle(0.01)
+    assert [m["code"] for m in phone.of("error")] == ["guide_talking", "guide_talking"]
+    await settle(0.1)
+    assert phone.last("hub_status")["guide_talking"] is False
+    await room.handle(asker, TalkStart())
+    assert asker.talking
+    await room.handle(hub, SegmentStart(pause_s=3))  # the guide starts again: Talk carries on
+    room.on_audio(asker, bytes(32_000))
+    # The guide's new segment has its own stream; the reply keeps the Family languages.
+    reply = next(st for st in stt.streams if st.languages == ["yue-Hant-HK", "en-US"])
+    assert len(reply.sent) == 32_000
+    reply.final("我哋幾點食飯？")
+    await room.handle(asker, TalkEnd())
+    await settle()
+    replies = [m for m in phone.of("sentence") if m["kind"] == "reply"]
+    assert [(m["zh"], m["stt"]) for m in replies] == [("我哋幾點食飯？", "chirp_3")]
+
+
+async def test_a_reply_clip_is_never_caught_up_or_sent_to_a_listener_on_request():
+    room = await make_room()
+    join(room, "hub", host=True)
+    asker, _ = join(room, talk=True)
+    await room.handle(asker, ReplyText(text="多謝晒。"))
+    await settle()
+    late, phone = join(room)
+    await room.handle(late, ClipRequest(sentence_id=1))
+    await settle()
+    assert phone.last("sentence")["kind"] == "reply"
+    assert phone.of("clip") == [] and phone.last("no_clip")["sentence_id"] == 1
+
+
+async def test_a_phone_leaving_mid_talk_still_sends_what_it_said():
+    stt = FakeStt()
+    room = await make_room(stt=stt)
+    hub, hub_phone = join(room, "hub", host=True)
+    asker, _ = join(room, talk=True)
+    await room.handle(asker, TalkStart())
+    room.on_audio(asker, bytes(32_000))
+    stt.streams[-1].final("唔該。")
+    await room.leave(asker)
+    await settle()
+    assert hub_phone.last("sentence")["zh"] == "唔該。"

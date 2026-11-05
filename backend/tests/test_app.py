@@ -81,6 +81,17 @@ def test_each_role_with_the_right_credentials_is_ready(client, hello, ready):
 
 
 @pytest.mark.parametrize(
+    "pin, talk",
+    [(PIN, True), ("wrong", False), ("", False)],
+)
+def test_a_family_phone_with_the_hub_pin_may_talk_and_a_wrong_pin_still_listens(client, pin, talk):
+    with client.websocket_connect("/ws/room") as ws:
+        ws.send_json(LISTENER | {"pin": pin})
+        message = ws.receive_json()
+        assert (message["type"], message["host"], message["talk"]) == ("ready", False, talk)
+
+
+@pytest.mark.parametrize(
     "first",
     [
         HUB | {"token": "wrong"},
@@ -89,6 +100,7 @@ def test_each_role_with_the_right_credentials_is_ready(client, hello, ready):
         LISTENER | {"room": "wrong"},
         HOST | {"pin": "wrong"},  # host credentials offered must be right
         HOST | {"pin": "wrong", "room": ROOM},  # even alongside a good join link
+        {"type": "hello", "role": "listener", "pin": PIN},  # the PIN alone isn't a join link
         {"type": "mode", "mode": "guide"},  # anything before hello
     ],
 )

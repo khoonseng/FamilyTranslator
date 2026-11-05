@@ -1,9 +1,9 @@
 """FastAPI app: the hub WebSocket, the API docs, a health check, and the built Vue app.
 
-Access (hard rule 1, owner decisions 2026-10-25/26): the hub needs both the hub PIN and the
-API token; a listener needs the room token from its join link, and a host listener also the PIN
-and API token; /openapi.json and every API endpoint need the API token (X-API-Token header, or
-?t=).
+Access (hard rule 1, owner decisions 2026-10-25/26, 2026-11-05): the hub needs both the hub PIN
+and the API token; a listener needs the room token from its join link, and may add the hub PIN
+to reply to the guide (phase 2); a host listener signs in with the PIN and API token;
+/openapi.json and every API endpoint need the API token (X-API-Token header, or ?t=).
 Open: /health, /docs (an empty shell that asks for the token) and the page's own files, also
 served at /join (the join link, /join#<room token>: the phone never sends what follows the #)
 /listen, /host and /mictest.
@@ -162,14 +162,16 @@ async def room_socket(ws: WebSocket) -> None:
     except (TimeoutError, ValidationError, WebSocketDisconnect):
         hello = None
     host = isinstance(hello, Hello) and pin_ok(hello.pin) and token_ok(hello.token)
+    talk = False
     if not isinstance(hello, Hello):
         allowed = False
     elif hello.role == "hub":
         allowed = host
-    elif hello.pin or hello.token:  # a host listener (signed in through /host): both must be right
+    elif hello.token:  # a host listener (signed in through /host): PIN and token must be right
         allowed = host
-    else:  # a family listener: the join link's token
+    else:  # a family listener: the join link's token; the hub PIN as well unlocks Talk (phase 2)
         allowed = await room_ok(hello.room)
+        talk = allowed and pin_ok(hello.pin)  # a wrong PIN still listens, just can't talk
     if not allowed:
         log("room_rejected", conn=conn)
         if ws.client_state.name == "CONNECTED":
@@ -179,7 +181,7 @@ async def room_socket(ws: WebSocket) -> None:
     the_room = await room()
     peer = the_room.join(
         conn, hello.role, host, hello.day, hello.last_id, ws.send_text, ws.send_bytes, ws.close,
-        takeover=hello.takeover,
+        takeover=hello.takeover, talk=talk,
     )  # fmt: skip
     try:
         while True:

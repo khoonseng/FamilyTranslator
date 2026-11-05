@@ -8,6 +8,7 @@ from app.schemas import Mode, SegmentEnd, SegmentStart, TypedText
 from tests.fakes import FakeStt, FakeTranscribe, FakeTranslator, FakeTts, fake_providers
 
 ONE_SECOND = bytes(32_000)
+ONE_SECOND_BYTES = 32_000
 
 
 class Hub:
@@ -25,13 +26,14 @@ class Hub:
         return [m for m in self.messages if isinstance(m, dict) and m["type"] == kind]
 
 
-def make(providers=None, echo=0.0, hold_s=0.05):
+def make(providers=None, echo=0.0, hold_s=0.05, max_talk_s=30):
     """echo=0 switches echo detection off: the fake translator's "粵:<text>" would make every
     test sentence look like an echo of the one before."""
     hub = Hub()
     cfg = copy.deepcopy(config.load())
     cfg["pipeline"]["echo_max_mismatch"] = echo
     cfg["pipeline"]["hold_s"] = hold_s
+    cfg["rooms"]["max_talk_s"] = max_talk_s
     session = Pipeline(providers or fake_providers(), cfg, hub.publish, "test")
     return session, hub
 
@@ -52,9 +54,9 @@ async def speak(session, stt, transcript=None, pause_s=0.5, seconds=1, end=True)
     return stream
 
 
-async def guide_session(echo=0.0, **kwargs):
+async def guide_session(echo=0.0, max_talk_s=30, **kwargs):
     stt = FakeStt()
-    session, hub = make(fake_providers(stt=stt, **kwargs), echo=echo)
+    session, hub = make(fake_providers(stt=stt, **kwargs), echo=echo, max_talk_s=max_talk_s)
     await session.start()
     await session.on_message(Mode(mode="guide"))
     return session, hub, stt
@@ -346,3 +348,77 @@ async def test_a_new_guide_sentence_is_not_an_echo():
     await speak(session, stt, "明天早上七点在酒店大堂集合。", pause_s=3)
     await settle()
     assert len(hub.of("sentence")) == 2
+
+
+# --- family replies (phase 2) -------------------------------------------------------------------
+
+
+async def test_a_typed_reply_is_translated_for_the_guide_in_a_bubble_of_its_own():
+    translator = FakeTranslator()
+    session, hub, stt = await guide_session(translator=translator)
+    await speak(session, stt, "我们先去解放碑。", pause_s=3)
+    await settle()
+    session.reply_text("我想去洗手間。")
+    await settle()
+    await speak(session, stt, "然后去洪崖洞。", pause_s=0.5)  # a short pause, but after a reply
+    await settle()
+    sentences = hub.of("sentence")
+    assert [(m["kind"], m["bubble_id"]) for m in sentences] == [
+        ("guide", 1), ("reply", 2), ("guide", 3),
+    ]  # fmt: skip
+    reply = sentences[1]
+    assert (reply["zh"], reply["mandarin"], reply["yue"], reply["stt"]) == (
+        "我想去洗手間。", "普:我想去洗手間。", "", "typed",
+    )  # fmt: skip
+    assert translator.directions == ["guide", "family", "guide"]
+    assert translator.calls[2][1] == ["我们先去解放碑。"]  # the reply isn't guide context
+    clip = next(m for m in hub.of("clip") if m["sentence_id"] == reply["id"])
+    assert (clip["for_hub"], clip["voice"]) == (True, "cmn-CN-Chirp3-HD-Kore")
+    assert {m["en"] for m in hub.of("english")} >= {"other:我想去洗手間。"}
+
+
+async def test_a_spoken_reply_uses_the_family_languages():
+    session, hub, stt = await guide_session()
+    session.reply_start("phone-1")
+    assert session.reply_audio("phone-1", ONE_SECOND * 2)
+    stream = stt.streams[-1]
+    assert stream.languages == ["yue-Hant-HK", "en-US"]
+    stream.final("Where is the toilet?")
+    session.reply_end("phone-1")
+    await settle()
+    reply = hub.of("sentence")[-1]
+    assert (reply["kind"], reply["zh"], reply["stt"]) == (
+        "reply", "Where is the toilet?", "chirp_3",
+    )  # fmt: skip
+
+
+async def test_a_failed_reply_stream_goes_to_gpt_transcribe_whole():
+    transcribe = FakeTranscribe("我哋幾點走？")
+    session, hub, stt = await guide_session(transcribe=transcribe)
+    session.reply_start("phone-1")
+    session.reply_audio("phone-1", ONE_SECOND * 3)
+    stt.streams[-1].error = RuntimeError("stream down")
+    session.reply_end("phone-1")
+    await settle()
+    assert transcribe.calls == [3 * 32_000]
+    assert [(m["zh"], m["stt"]) for m in hub.of("sentence")] == [("我哋幾點走？", "gpt-transcribe")]
+
+
+async def test_a_reply_stops_at_the_cap():
+    session, hub, stt = await guide_session(max_talk_s=1)
+    session.reply_start("phone-1")
+    assert session.reply_audio("phone-1", bytes(16_000))  # half a second
+    stt.streams[-1].final("好。")
+    assert not session.reply_audio("phone-1", ONE_SECOND)  # past 1 s: ends here
+    assert len(stt.streams[-1].sent) == ONE_SECOND_BYTES
+    await settle()
+    assert [m["zh"] for m in hub.of("sentence")] == ["好。"]
+
+
+async def test_the_guides_clip_on_overhearing_a_reply_does_not_loop():
+    session, hub, stt = await guide_session(echo=0.6)
+    session.reply_text("我想去洗手間。")
+    await settle()
+    await speak(session, stt, "普:我想去洗手間。", pause_s=3)  # the hub's Mandarin, overheard
+    await settle()
+    assert [m["kind"] for m in hub.of("sentence")] == ["reply"]

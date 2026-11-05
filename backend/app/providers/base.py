@@ -26,12 +26,16 @@ class TokenUsage:
 
 @dataclass
 class Translation:
-    """`yue` is ready as soon as it is complete, so TTS can start; `en` follows (hard rule 3)."""
+    """`speech` is what the voice says, ready as soon as it is complete so TTS can start; `other`
+    follows (CLAUDE.md "Architecture in brief", item 3).
+    - Guide → family: `speech` is the Cantonese (`yue`), `other` the English.
+    - A family reply → guide (phase 2): `speech` is the Mandarin (`zh_hans`), `other` the
+      family's other language (English for Cantonese speech, Cantonese for English)."""
 
-    yue: str
-    en: Awaitable[str]
+    speech: str
+    other: Awaitable[str]
     provider: str
-    yue_s: float  # request start -> `yue` complete
+    speech_s: float  # request start -> `speech` complete
     attempts: list[Attempt] = field(default_factory=list)
 
 

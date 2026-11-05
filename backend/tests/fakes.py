@@ -43,6 +43,7 @@ class FakeStt:
 
     def open(self, languages):
         stream = FakeStream()
+        stream.languages = languages
         self.streams.append(stream)
         return stream
 
@@ -53,39 +54,44 @@ class FakeTranslator:
     def __init__(self, delays=None, fail=()):
         self.delays, self.fail = delays or {}, set(fail)
         self.calls: list[tuple[str, list[str]]] = []
+        self.directions: list[str] = []
         self.warmed = False
 
     async def warm_up(self):
         self.warmed = True
 
-    async def translate(self, text, context):
+    async def translate(self, text, context, direction="guide"):
+        """Guide → family: "粵:<text>", then "en:<text>"; a reply (family): "普:<text>" (the
+        Mandarin for the guide), then "other:<text>"."""
         from app.providers.base import TranslationFailed
 
         self.calls.append((text, context))
+        self.directions.append(direction)
         await asyncio.sleep(self.delays.get(text, 0))
         if text in self.fail:
             raise TranslationFailed([Attempt("gemini", "429", 0.1)])
+        speech, other = ("普", "other") if direction == "family" else ("粵", "en")
 
-        async def en():
-            return f"en:{text}"
+        async def rest():
+            return f"{other}:{text}"
 
-        return Translation(f"粵:{text}", asyncio.ensure_future(en()), "gemini", 0.1)
+        return Translation(f"{speech}:{text}", asyncio.ensure_future(rest()), "gemini", 0.1)
 
 
 class FakeTts:
     """Despina, unless the text is in `fail` (every voice fails) or `fallback` (Despina refuses
     it and Standard-A speaks it, like a sentence too long for Despina)."""
 
-    def __init__(self, fail=(), fallback=()):
-        self.fail, self.fallback = set(fail), set(fallback)
+    def __init__(self, fail=(), fallback=(), voice="yue-HK-Chirp3-HD-Despina"):
+        self.fail, self.fallback, self.voice = set(fail), set(fallback), voice
 
     async def speak(self, text):
         if text in self.fail:
-            raise SpeechFailed([Attempt("yue-HK-Chirp3-HD-Despina", "error", 0.1)])
+            raise SpeechFailed([Attempt(self.voice, "error", 0.1)])
         if text in self.fallback:
-            refused = [Attempt("yue-HK-Chirp3-HD-Despina", "rejected", 0.1)]
+            refused = [Attempt(self.voice, "rejected", 0.1)]
             return Speech(f"mp3:{text}".encode(), "yue-HK-Standard-A", 0.1, refused)
-        return Speech(f"mp3:{text}".encode(), "yue-HK-Chirp3-HD-Despina", 0.1)
+        return Speech(f"mp3:{text}".encode(), self.voice, 0.1)
 
 
 class FakeTranscribe:
@@ -108,6 +114,7 @@ class FakeProviders:
     tts: FakeTts
     stt: FakeStt
     transcribe: FakeTranscribe
+    mandarin_tts: "FakeTts"
 
 
 def fake_providers(**kwargs) -> FakeProviders:
@@ -116,4 +123,5 @@ def fake_providers(**kwargs) -> FakeProviders:
         kwargs.get("tts", FakeTts()),
         kwargs.get("stt", FakeStt()),
         kwargs.get("transcribe", FakeTranscribe()),
+        kwargs.get("mandarin_tts", FakeTts(voice="cmn-CN-Chirp3-HD-Kore")),
     )

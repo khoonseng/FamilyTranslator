@@ -79,6 +79,25 @@ class LinkRequest(BaseModel):
     new: bool = False
 
 
+class TalkStart(BaseModel):
+    """A family phone with the hub PIN (phase 2): hold to talk has started. Its PCM frames
+    follow as binary frames, then `talk_end`. Refused while the guide is talking or has been
+    quiet for less than 2 s (hard rule 8); once started, it runs to the end, at most 30 s."""
+
+    type: Literal["talk_start"] = "talk_start"
+
+
+class TalkEnd(BaseModel):
+    type: Literal["talk_end"] = "talk_end"
+
+
+class ReplyText(BaseModel):
+    """A family phone with the hub PIN: a typed reply to the guide (any time)."""
+
+    type: Literal["reply_text"] = "reply_text"
+    text: str = Field(min_length=1, max_length=500)
+
+
 class HubMic(BaseModel):
     """The hub: which mic it hears (the guide's clip-on, or the phone's own), whether the chosen
     clip-on is lost, and whether it needs a tap to listen again (weeks 6–7 step 2)."""
@@ -98,7 +117,10 @@ PhoneMessage = Annotated[
     | ClipRequest
     | GuideControl
     | LinkRequest
-    | HubMic,
+    | HubMic
+    | TalkStart
+    | TalkEnd
+    | ReplyText,
     Field(discriminator="type"),
 ]
 phone_message = TypeAdapter(PhoneMessage)
@@ -115,6 +137,7 @@ class Ready(BaseModel):
     type: Literal["ready"] = "ready"
     role: Literal["hub", "listener"]
     host: bool = False
+    talk: bool = False  # may reply to the guide (phase 2): the hub PIN was given
     day: str = ""
     latest_id: int = 0
 
@@ -164,6 +187,8 @@ class HubStatus(BaseModel):
     mic: str = ""
     mic_lost: bool = False
     interrupted: bool = False
+    # The guide is speaking, or stopped less than 2 s ago: Talk can't start (phase 2).
+    guide_talking: bool = False
 
 
 class GuideRemote(BaseModel):
@@ -195,16 +220,23 @@ class Sentence(BaseModel):
     # joined with "+" (a held half-sentence finished by the other), or typed. Shown on host
     # phones only, with `provider`.
     stt: str = ""
+    # A family member's reply to the guide (phase 2): `zh` is what they said or typed
+    # (Cantonese or English), `mandarin` is what the guide hears; `yue` stays empty, and the
+    # `english` message that follows carries the family's other language.
+    kind: Literal["guide", "reply"] = "guide"
+    mandarin: str = ""
 
 
 class Clip(BaseModel):
     """Header for the sentence's MP3, which follows as the next binary frame. Clips arrive in
-    sentence order, each after its sentence."""
+    sentence order, each after its sentence. A reply's Mandarin clip (`for_hub`) goes to the
+    hub only: listeners hear Cantonese, the guide hears Mandarin (two audio channels)."""
 
     type: Literal["clip"] = "clip"
     sentence_id: int
     bytes: int
     voice: str = ""  # which voice spoke it (Despina, or the fallback); shown on host phones only
+    for_hub: bool = False
 
 
 class NoClip(BaseModel):
@@ -215,7 +247,9 @@ class NoClip(BaseModel):
 
 
 class English(BaseModel):
-    """The sentence's English, which finishes after the Cantonese (shown from weeks 4–5)."""
+    """The sentence's English, which finishes after the Cantonese (shown from weeks 4–5). For a
+    reply (phase 2) it carries the family's other language: English for Cantonese, Cantonese
+    for English."""
 
     type: Literal["english"] = "english"
     sentence_id: int

@@ -21,6 +21,10 @@ rooms:
   timezone: Asia/Shanghai # the trip-local day; bubbles start fresh each morning
   hub_offline_s: 20       # without a hub this long, listeners show "Hub offline"
   clips_in_memory: 200    # recent clips kept for catch-up; older ones come from Cloud Storage
+  # Family replies (phase 2): Talk starts only after the guide has been quiet this long (hard
+  # rule 8); a spoken reply is capped at this length (hold to talk).
+  guide_quiet_s: 2
+  max_talk_s: 30
 
 stt:
   google:
@@ -29,6 +33,7 @@ stt:
     endpoint: us-speech.googleapis.com
     model: chirp_3
     guide_languages: [cmn-Hans-CN, yue-Hant-HK]   # Guide mode (hard rule 8)
+    family_languages: [yue-Hant-HK, en-US]        # Talk on a family phone (phase 2)
     phrase_boost: 10              # glossary phrase biasing strength
     endpointing: standard         # "short" split words and dropped more speech in week 1
     # One stream per hub segment, closed at the segment's end (decided 2026-10-25).
@@ -84,6 +89,14 @@ tts:
     language: yue-HK
     voices: [yue-HK-Chirp3-HD-Despina, yue-HK-Standard-A]   # main, then fallback
     speaking_rate: 1.0            # never sped up (hard rule 11)
+    timeout_s: 8
+  google_mandarin:
+    # Family replies to the guide (phase 2), played by the hub. Chosen for now (5 Nov); to be
+    # revisited for a more natural voice once phase 2 works.
+    endpoint: texttospeech.googleapis.com
+    language: cmn-CN
+    voices: [cmn-CN-Chirp3-HD-Kore, cmn-CN-Standard-A]
+    speaking_rate: 1.0
     timeout_s: 8
 
 pipeline:

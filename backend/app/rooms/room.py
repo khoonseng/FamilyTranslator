@@ -11,7 +11,11 @@
   day: phones clear their bubbles and numbering restarts; earlier days stay in the bucket.
 - Catch-up: a joining phone first gets every sentence after its `last_id` (text, then the clips
   in memory; older clips follow from the bucket), then the live stream.
-- Host controls (remote pause, the join link) are refused for other phones. Become hub on a
+- Host controls (remote pause, the join link) are refused for other phones.
+- Family replies (phase 2): a phone that gave the hub PIN may talk or type to the guide. Talk
+  starts only when the guide has been quiet for `guide_quiet_s` (the hub's segments say when
+  he speaks), then runs to its end; typing works any time. A reply's Mandarin clip goes to
+  the hub only. Become hub on a
   host phone opens the hub page, which takes over like any hub's Start.
 
 Logs carry connection ids, roles and counts only, never text, audio or tokens (hard rule 14)."""
@@ -44,11 +48,14 @@ from app.schemas import (
     Mode,
     NoClip,
     Ready,
+    ReplyText,
     Role,
     SegmentEnd,
     SegmentStart,
     Sentence,
     Spend,
+    TalkEnd,
+    TalkStart,
     TypedText,
 )
 from app.usage import Meter
@@ -72,6 +79,8 @@ class Peer:
     queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     task: asyncio.Task | None = None
     sent: int = 0
+    talk: bool = False  # gave the hub PIN: may reply to the guide (phase 2)
+    talking: bool = False  # holding Talk now
 
     def put(self, message: BaseModel, audio: bytes | None = None) -> None:
         self.queue.put_nowait((message.model_dump_json(), audio))
@@ -98,6 +107,8 @@ class Room:
         self.listening = False  # the hub's Guide latch
         self.remote_paused = False
         self.hub_mic: HubMic | None = None  # what the hub last said about its mic
+        self.guide_talking = False  # the guide speaks, or stopped less than guide_quiet_s ago
+        self._quiet: asyncio.Task | None = None
         self.hub_online = False
         self._offline: asyncio.Task | None = None
         self._tasks: set[asyncio.Task] = set()
@@ -127,7 +138,17 @@ class Room:
     # --- phones -------------------------------------------------------------------------------
 
     def join(  # noqa: PLR0913
-        self, conn, role, host, day, last_id, send_text, send_bytes, close=None, takeover=False
+        self,
+        conn,
+        role,
+        host,
+        day,
+        last_id,
+        send_text,
+        send_bytes,
+        close=None,
+        takeover=False,
+        talk=False,
     ) -> Peer:
         """`takeover`: a hub's Start or Become hub. Without it (an automatic reconnect), a hub
         joins as a listener if another phone is the hub now."""
@@ -136,10 +157,12 @@ class Room:
             role = "listener"
             log("hub_reconnect_declined", conn=conn)
         peer = Peer(conn, "listener", host, send_text, send_bytes, close)
+        peer.talk = talk or host
         if day != self.day:
             last_id = 0  # the phone's bubbles are from another day: it clears them
         latest = next(reversed(self.history), 0)
-        peer.put(Ready(role=role, host=host, day=self.day, latest_id=latest))
+        talk = peer.talk and role != "hub"
+        peer.put(Ready(role=role, host=host, talk=talk, day=self.day, latest_id=latest))
         stored_clips = []
         for message, audio in self._catch_up(last_id):
             if message is None:
@@ -156,11 +179,14 @@ class Room:
             peer.put(self._status())
             if host:
                 peer.put(self._spend())
-        log("room_join", conn=conn, role=role, host=host, phones=len(self.peers))
+        log("room_join", conn=conn, role=role, host=host, talk=talk, phones=len(self.peers))
         return peer
 
     async def leave(self, peer: Peer) -> None:
         self.peers.discard(peer)
+        if peer.talking:  # what they said so far still goes to the guide
+            peer.talking = False
+            self.pipeline.reply_end(peer.conn)
         if peer.task:
             peer.task.cancel()
         if peer is self.hub:
@@ -177,10 +203,18 @@ class Room:
                 self.listening = message.mode == "guide"
                 if self.listening:
                     self.remote_paused = False
+                else:
+                    self._guide_quiet_now()
                 self._broadcast(self._status())
+            elif isinstance(message, SegmentStart):
+                self._guide_speaking()
+            elif isinstance(message, SegmentEnd):
+                self._guide_paused()
             await self.pipeline.on_message(message)
         elif isinstance(message, ClipRequest):
             self._spawn(self._send_clip(peer, message.sentence_id))
+        elif isinstance(message, (TalkStart, TalkEnd, ReplyText)):
+            self._reply(peer, message)
         elif isinstance(message, HubMic):
             if peer is not self.hub:
                 return
@@ -207,6 +241,62 @@ class Room:
     def on_audio(self, peer: Peer, pcm: bytes) -> None:
         if peer is self.hub:
             self.pipeline.on_audio(pcm)
+        elif peer.talking and not self.pipeline.reply_audio(peer.conn, pcm):
+            peer.talking = False  # the 30 s cap: the recording has been sent on
+
+    # --- family replies (phase 2) ---------------------------------------------------------------
+
+    def _reply(self, peer: Peer, message: BaseModel) -> None:
+        if not peer.talk:
+            peer.put(Error(code="not_allowed"))
+            log("reply_refused", conn=peer.conn)
+            return
+        self._check_day()
+        if isinstance(message, TalkStart):
+            if self.guide_talking:  # the guide has priority (hard rule 8)
+                peer.put(Error(code="guide_talking"))
+                log("talk_refused", conn=peer.conn)
+                return
+            peer.talking = True
+            self.pipeline.reply_start(peer.conn)
+            log("talk_start", conn=peer.conn)
+        elif isinstance(message, TalkEnd):
+            if peer.talking:
+                peer.talking = False
+                self.pipeline.reply_end(peer.conn)
+                log("talk_end", conn=peer.conn)
+        else:
+            self.pipeline.reply_text(message.text)
+            log("reply_typed", conn=peer.conn)
+
+    def _guide_speaking(self) -> None:
+        if self._quiet:
+            self._quiet.cancel()
+            self._quiet = None
+        self._set_guide_talking(True)
+
+    def _guide_paused(self) -> None:
+        """Talk opens once the guide has been quiet for `guide_quiet_s` (hard rule 8)."""
+        if self._quiet:
+            self._quiet.cancel()
+        self._quiet = self._spawn(self._quiet_after())
+
+    async def _quiet_after(self) -> None:
+        await asyncio.sleep(self.cfg["guide_quiet_s"])
+        self._quiet = None
+        self._set_guide_talking(False)
+
+    def _guide_quiet_now(self) -> None:
+        """Guide listening stopped, or the hub left: nothing to wait for."""
+        if self._quiet:
+            self._quiet.cancel()
+            self._quiet = None
+        self._set_guide_talking(False)
+
+    def _set_guide_talking(self, talking: bool) -> None:
+        if talking != self.guide_talking:
+            self.guide_talking = talking
+            self._broadcast(self._status())
 
     # --- the join link --------------------------------------------------------------------------
 
@@ -250,6 +340,7 @@ class Room:
         """The hub left or was replaced: end its segment; listeners learn after a grace time."""
         await self.pipeline.on_message(Mode(mode="off"))
         self.listening = False
+        self._guide_quiet_now()
         if self.hub is None:
             self.hub_mic = None
         if offline_timer and self.hub is None:
@@ -273,6 +364,7 @@ class Room:
             mic=mic.mic if mic else "",
             mic_lost=bool(mic and mic.lost),
             interrupted=bool(mic and mic.interrupted),
+            guide_talking=self.guide_talking,
         )
 
     # --- days ---------------------------------------------------------------------------------
@@ -350,7 +442,19 @@ class Room:
         elif isinstance(message, English):
             self._set(message.sentence_id, en=message.en)
             self._spawn(self._save(day, message.sentence_id))
+        if self._for_hub_only(message):
+            if self.hub:
+                self.hub.put(message, audio)
+            return
         self._broadcast(message, audio)
+
+    def _for_hub_only(self, message: BaseModel) -> bool:
+        """A reply's Mandarin clip (or its absence) is for the guide, played by the hub."""
+        if isinstance(message, Clip):
+            return message.for_hub
+        if isinstance(message, NoClip):
+            return self.history.get(message.sentence_id, {}).get("kind") == "reply"
+        return False
 
     def _set(self, sentence_id: int, **fields) -> None:
         if sentence_id in self.history:
@@ -369,7 +473,7 @@ class Room:
     def _catch_up(self, last_id: int):
         """Everything after `last_id`: all the text first, so the screen fills quickly, then
         the clips. A clip no longer in memory comes back as (None, sentence_id), to be fetched
-        from the bucket."""
+        from the bucket. A reply's Mandarin clip is never caught up: it was for the guide, then."""
         newer = [r for sid, r in self.history.items() if sid > last_id]
         for record in newer:
             # Records saved before a field existed (e.g. `stt`) take its default.
@@ -378,6 +482,8 @@ class Room:
             if record["en"]:
                 yield English(sentence_id=record["id"], en=record["en"]), None
         for record in newer:
+            if record.get("kind") == "reply":
+                continue
             if record["clip"] == "none":
                 yield NoClip(sentence_id=record["id"]), None
             elif record["id"] in self.clips:
@@ -396,6 +502,9 @@ class Room:
         record = self.history.get(sentence_id)
         if record is None or record["clip"] == "pending":
             return  # unknown, or still being spoken: it arrives live
+        if record.get("kind") == "reply":
+            peer.put(NoClip(sentence_id=sentence_id))  # a reply's Mandarin was for the guide
+            return
         audio = self.clips.get(sentence_id)
         if audio is None and record["clip"] == "ready":
             audio = await self.store.get_clip(self.day, sentence_id)

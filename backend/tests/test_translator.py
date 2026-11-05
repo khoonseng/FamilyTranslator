@@ -5,7 +5,7 @@ from time import perf_counter
 import pytest
 
 from app.providers.base import TokenUsage, TranslationFailed, outcome_of
-from app.providers.translator import Translator, translation_messages
+from app.providers.translator import Translator, fallback_targets, translation_messages
 from app.usage import Meter
 
 YUE, EN = "洪崖洞夜晚七點半之後會開燈。", "Hongyadong's lights come on after 7:30 pm."
@@ -49,8 +49,9 @@ class FakeCloudTranslate:
         self.yue, self.en, self.error = yue, en, error
         self.calls = 0
 
-    def translate(self, text):
+    def translate(self, text, targets=("yue", "en")):
         self.calls += 1
+        self.targets = targets
 
         async def one(value):
             if self.error:
@@ -77,8 +78,8 @@ def translator(*models, fallback=None, deadline=0.2, timeout=1.0):
 async def test_first_model_answers():
     t = translator(FakeModel("gemini", deadline=True), FakeModel("qwen"))
     result = await t.translate("洪崖洞晚上七点半以后开灯", [])
-    assert (result.yue, result.provider, result.attempts) == (YUE, "gemini", [])
-    assert await result.en == EN
+    assert (result.speech, result.provider, result.attempts) == (YUE, "gemini", [])
+    assert await result.other == EN
 
 
 async def test_yue_is_ready_before_en_finishes():
@@ -86,7 +87,7 @@ async def test_yue_is_ready_before_en_finishes():
     start = perf_counter()
     result = await t.translate("...", [])
     assert perf_counter() - start < 0.2  # TTS can start without waiting for `en`
-    assert await result.en == EN
+    assert await result.other == EN
 
 
 async def test_refusal_429_fails_over_at_once():
@@ -126,7 +127,7 @@ async def test_reply_without_yue_is_bad_json():
 
 async def test_escaped_quotes_in_yue_are_decoded():
     t = translator(FakeModel("gemini", reply(yue='佢話「"開燈"」'), deadline=True))
-    assert (await t.translate("...", [])).yue == '佢話「"開燈"」'
+    assert (await t.translate("...", [])).speech == '佢話「"開燈"」'
 
 
 async def test_gpt_oss_answers_when_gemini_and_qwen_fail():
@@ -163,8 +164,8 @@ async def test_both_llms_fail_then_cloud_translation():
         fallback=fallback,
     )
     result = await t.translate("...", [])
-    assert (result.provider, result.yue) == ("cloud-translate", fallback.yue)
-    assert await result.en == fallback.en
+    assert (result.provider, result.speech) == ("cloud-translate", fallback.yue)
+    assert await result.other == fallback.en
     assert [a.outcome for a in result.attempts] == ["429", "error"]
 
 
@@ -213,7 +214,7 @@ async def test_the_meter_counts_tokens_from_the_reply():
     t = translator(FakeModel("gemini", deadline=True))
     t.meter = Meter()
     result = await t.translate("...", [])
-    await result.en
+    await result.other
     assert t.meter.to_dict() == {"llm_in": {"gemini": 1200}, "llm_out": {"gemini": 80}}
 
 
@@ -228,3 +229,44 @@ async def test_an_abandoned_reply_is_billed_for_its_prompt_and_cloud_translation
     counts = t.meter.to_dict()
     assert 800 < counts["llm_in"]["gemini"] < 1200  # estimated from the prompt's length
     assert counts["mt"] == {"cloud-translate": 2 * len("我们到了。")}
+
+
+# --- family replies (phase 2) -------------------------------------------------------------------
+
+
+def family_reply(zh_hans="我们几点集合？", other="What time do we meet?") -> str:
+    return json.dumps({"zh_hans": zh_hans, "other": other}, ensure_ascii=False)
+
+
+async def test_a_reply_reads_the_mandarin_then_the_other_language():
+    t = translator(FakeModel("gemini", family_reply(), deadline=True))
+    result = await t.translate("我哋幾點集合？", [], direction="family")
+    assert (result.speech, result.provider) == ("我们几点集合？", "gemini")
+    assert await result.other == "What time do we meet?"
+
+
+async def test_english_names_in_a_reply_are_not_junk():
+    t = translator(FakeModel("gemini", family_reply(zh_hans="附近有KFC吗？"), deadline=True))
+    result = await t.translate("Is there a KFC nearby?", [], direction="family")
+    assert (result.speech, result.attempts) == ("附近有KFC吗？", [])
+
+
+async def test_a_reply_falls_back_to_cloud_translation_into_mandarin():
+    fallback = FakeCloudTranslate(yue="附近有洗手间吗？", en="附近有洗手間嗎？")
+    t = translator(FakeModel("gemini", deadline=True, error=Refused()), fallback=fallback)
+    result = await t.translate("Is there a toilet nearby?", [], direction="family")
+    assert (result.provider, result.speech) == ("cloud-translate", "附近有洗手间吗？")
+    assert fallback.targets == ("zh-CN", "yue")
+
+
+def test_fallback_targets_follow_the_direction():
+    assert fallback_targets("洪崖洞几点开灯？", "guide") == ("yue", "en")
+    assert fallback_targets("我哋幾點走？", "family") == ("zh-CN", "en")  # Cantonese: English
+    assert fallback_targets("When do we leave?", "family") == ("zh-CN", "yue")  # English
+
+
+def test_the_family_prompt_fills_in_glossary_and_context():
+    system, user = translation_messages("幾點集合？", ["先去解放碑"], direction="family")
+    assert user["content"] == "幾點集合？"
+    assert '"zh_hans"' in system["content"] and "- 先去解放碑" in system["content"]
+    assert "{glossary}" not in system["content"] and "{context}" not in system["content"]

@@ -14,9 +14,10 @@ from app.providers.tts import GoogleTts
 @dataclass
 class Providers:
     translator: Translator
-    tts: GoogleTts
+    tts: GoogleTts  # Cantonese, for the family
     stt: GoogleStreamingStt
     transcribe: OpenAiTranscribe
+    mandarin_tts: GoogleTts  # Mandarin, for the guide (phase 2 replies)
 
 
 def build(cfg: dict | None = None) -> Providers:
@@ -43,4 +44,5 @@ def build(cfg: dict | None = None) -> Providers:
         tts=GoogleTts(cfg["tts"]["google"]),
         stt=GoogleStreamingStt(cfg["stt"]["google"], project, phrases),
         transcribe=OpenAiTranscribe(cfg["stt"]["openai"], phrases),
+        mandarin_tts=GoogleTts(cfg["tts"]["google_mandarin"]),
     )

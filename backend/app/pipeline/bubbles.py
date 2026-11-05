@@ -27,6 +27,13 @@ class Bubbles:
         self.current = bubble
         return bubble
 
+    def reply(self) -> int:
+        """A family member's reply (phase 2): a bubble of its own. The guide's next segment
+        starts a new bubble rather than continuing in it."""
+        bubble = self.new()
+        self.current = None
+        return bubble
+
     def on_segment(self, pause_s: float) -> int:
         """A segment starts after `pause_s` of silence: the bubble its speech belongs to."""
         current = self._latest(self.current) if self.current else None

@@ -20,6 +20,14 @@ translated and spoken as soon as it is ready, concurrently, but sent to the hub 
 order: its text first, then its clip. A later segment's sentences wait for the earlier
 segment's. Typed Mandarin skips speech-to-text and the junk filter.
 
+Family replies (phase 2): a family phone's hold-to-talk recording gets one Chirp 3 stream with
+the Family languages (Cantonese, English), capped at `max_talk_s`; if the stream fails or
+leaves part uncovered, the whole recording goes to `gpt-transcribe`. No junk filter: Talk is
+never an open mic. A reply, spoken or typed, is one sentence in a bubble of its own, numbered
+and ordered with the guide's. It is translated the other way (Mandarin for the guide, plus the
+family's other language), spoken in Mandarin, and its clip is marked for the hub. Echo
+detection also remembers the Mandarin, in case the guide's clip-on overhears the hub.
+
 Logs carry ids, labels and timings only, never text or audio (hard rule 14)."""
 
 import asyncio
@@ -63,6 +71,14 @@ class _Live:
 
 
 @dataclass
+class _Reply:
+    """One family member's hold-to-talk recording (phase 2)."""
+
+    chirp: object  # ChirpStream (or a fake in tests)
+    pcm: bytearray = field(default_factory=bytearray)
+
+
+@dataclass
 class _Pending:
     """The start of a sentence that a pause cut off, waiting for the rest."""
 
@@ -70,6 +86,10 @@ class _Pending:
     bubble: int
     stt: str  # which speech-to-text heard it
     carried: int = 0  # segments that ended without finishing it
+
+
+def _has_cjk(text: str) -> bool:
+    return any("一" <= c <= "鿿" for c in text)
 
 
 def _done() -> asyncio.Future:
@@ -92,6 +112,7 @@ class Pipeline:
         self.stt_cfg = cfg["stt"]["google"]
         self.net_cfg = cfg["stt"]["safety_net"]
         self.pipe_cfg = cfg["pipeline"]
+        self.max_talk_s = cfg["rooms"]["max_talk_s"]
         self.context_n = cfg["translation"]["context_sentences"]
         self._publish = publish
         self.meter = None  # the room's spending meter, if any
@@ -107,6 +128,7 @@ class Pipeline:
         self._last_consumer: asyncio.Task | None = None
         self._pending: _Pending | None = None
         self._flush: asyncio.Task | None = None
+        self.replies: dict[str, _Reply] = {}  # phone connection -> its recording in progress
         self.echo = EchoGuard(self.pipe_cfg["echo_window_s"], self.pipe_cfg["echo_max_mismatch"])
         self._next_id = 1
         self._context: deque[str] = deque(maxlen=self.context_n)
@@ -289,35 +311,105 @@ class Pipeline:
             pending, self._pending = self._pending, None
             self._accept(pending.text, pending.bubble, pending.stt)
 
+    # --- family replies (phase 2) -------------------------------------------------------------
+
+    def reply_start(self, key: str) -> None:
+        """Hold to talk on a family phone (`key`: its connection)."""
+        self.reply_end(key)  # a talk_end that never came
+        self.replies[key] = _Reply(self.p.stt.open(self.stt_cfg["family_languages"]))
+
+    def reply_audio(self, key: str, pcm: bytes) -> bool:
+        """Feeds the phone's recording; False once it is over (unknown, or at the cap)."""
+        reply = self.replies.get(key)
+        if reply is None:
+            return False
+        room = int(self.max_talk_s * BYTES_PER_SECOND) - len(reply.pcm)
+        pcm = pcm[: max(0, room) // 2 * 2]
+        if pcm:
+            reply.chirp.send(pcm)
+            reply.pcm.extend(pcm)
+        if len(pcm) < room:
+            return True
+        self.reply_end(key)  # the 30 s cap
+        return False
+
+    def reply_end(self, key: str) -> None:
+        reply = self.replies.pop(key, None)
+        if reply is not None:
+            self._spawn(self._finish_reply(key, reply))
+
+    def reply_text(self, text: str) -> None:
+        """A typed reply: no speech-to-text."""
+        self._dispatch(text.strip(), self.bubbles.reply(), stt="typed", kind="reply")
+
+    async def _finish_reply(self, key: str, reply: _Reply) -> None:
+        await reply.chirp.close()
+        texts, covered_s = [], 0.0
+        while (final := await reply.chirp.finals.get()) is not None:
+            texts.append(final.text.strip())
+            covered_s = max(covered_s, final.end_s)
+        audio_s = len(reply.pcm) / BYTES_PER_SECOND
+        stt = self.stt_cfg["model"]
+        if self.meter:
+            self.meter.stt(stt, audio_s)
+        reason = (
+            "stream_failed" if reply.chirp.error is not None
+            else "uncovered" if audio_s - covered_s > self.net_cfg["gap_s"]
+            else ""
+        )  # fmt: skip
+        if reason and audio_s >= self.net_cfg["min_s"]:
+            # The safety net (hard rule 9), on the whole recording: at most 30 s.
+            name = getattr(self.p.transcribe, "name", "gpt-transcribe")
+            try:
+                if self.meter:
+                    self.meter.stt(name, audio_s)
+                whole = await self.p.transcribe.transcribe(bytes(reply.pcm))
+                if whole and self.net_cfg["prompt_echo"] not in whole:
+                    texts, stt = [whole.strip()], name
+            except Exception as exc:  # noqa: BLE001 - keep what Chirp 3 heard, if anything
+                log("safety_net", conn=key, reason=reason, outcome=type(exc).__name__)
+        texts = [t for t in texts if t]
+        joiner = "" if all(_has_cjk(t) for t in texts) else " "
+        text = joiner.join(texts)
+        log("reply_heard", conn=key, audio_s=round(audio_s, 1), stt=stt, kept=bool(text))
+        if text:
+            self._dispatch(text, self.bubbles.reply(), stt=stt, kind="reply")
+
     # --- one sentence -------------------------------------------------------------------------
 
-    def _dispatch(self, zh: str, bubble_hint: int, stt: str) -> None:
+    def _dispatch(self, zh: str, bubble_hint: int, stt: str, kind: str = "guide") -> None:
         sentence_id = self._next_id
         self._next_id += 1
         bubble = self.bubbles.on_sentence(bubble_hint)
-        context = list(self._context)
-        self._context.append(zh)
+        context = list(self._context)  # the guide's recent sentences, for either direction
+        if kind == "guide":
+            self._context.append(zh)
         loop = asyncio.get_running_loop()
         text_prev, clip_prev = self._text_done, self._clip_done
         self._text_done, self._clip_done = loop.create_future(), loop.create_future()
         self._spawn(
             self._process(
-                sentence_id, bubble, zh, context, stt,
+                sentence_id, bubble, zh, context, stt, kind,
                 text_prev, self._text_done, clip_prev, self._clip_done,
             )
         )  # fmt: skip
 
-    async def _process(
-        self, sentence_id, bubble, zh, context, stt, text_prev, text_mine, clip_prev, clip_mine
-    ) -> None:
+    async def _process(  # noqa: PLR0913
+        self, sentence_id, bubble, zh, context, stt, kind,
+        text_prev, text_mine, clip_prev, clip_mine,
+    ) -> None:  # fmt: skip
         started = perf_counter()
-        fields = {"conn": self.conn, "id": sentence_id, "bubble": bubble, "stt": stt}
+        reply = kind == "reply"
+        fields = {"conn": self.conn, "id": sentence_id, "bubble": bubble, "stt": stt, "kind": kind}
         try:
             try:
-                translation = await self.p.translator.translate(zh, context)
+                translation = await self.p.translator.translate(
+                    zh, context, direction="family" if reply else "guide"
+                )
             except TranslationFailed as failed:
                 translation = None
                 fields["attempts"] = [f"{a.provider}:{a.outcome}" for a in failed.attempts]
+            spoken = translation.speech if translation else ""
             await text_prev
             try:
                 await self._send(
@@ -325,7 +417,9 @@ class Pipeline:
                         id=sentence_id,
                         bubble_id=bubble,
                         zh=zh,
-                        yue=translation.yue if translation else "",
+                        yue="" if reply else spoken,
+                        mandarin=spoken if reply else "",
+                        kind=kind,
                         status="ok" if translation else "no_translation",
                         provider=translation.provider if translation else "",
                         stt=stt,
@@ -336,16 +430,16 @@ class Pipeline:
             if translation is None:
                 fields["outcome"] = "no_translation"
                 return
-            self.echo.remember(translation.yue)
+            self.echo.remember(spoken)  # our own words, Cantonese or Mandarin, if overheard
             fields |= {
                 "provider": translation.provider,
                 "attempts": [f"{a.provider}:{a.outcome}" for a in translation.attempts],
-                "translate_s": translation.yue_s,
+                "translate_s": translation.speech_s,
             }
             try:
-                speech = await self.p.tts.speak(translation.yue)
+                speech = await (self.p.mandarin_tts if reply else self.p.tts).speak(spoken)
                 if self.meter:
-                    self.meter.tts(speech.voice, len(translation.yue))
+                    self.meter.tts(speech.voice, len(spoken))
                 fields |= {
                     "voice": speech.voice,
                     "voice_attempts": [f"{a.provider}:{a.outcome}" for a in speech.attempts],
@@ -360,7 +454,10 @@ class Pipeline:
             try:
                 if speech:
                     header = Clip(
-                        sentence_id=sentence_id, bytes=len(speech.audio), voice=speech.voice
+                        sentence_id=sentence_id,
+                        bytes=len(speech.audio),
+                        voice=speech.voice,
+                        for_hub=reply,
                     )
                     await self._send(header, speech.audio)
                 else:
@@ -369,9 +466,9 @@ class Pipeline:
                 clip_mine.set_result(None)
             fields["total_s"] = round(perf_counter() - started, 3)
             fields.setdefault("outcome", "ok")
-            en = await translation.en
-            if en:
-                await self._send(English(sentence_id=sentence_id, en=en))
+            other = await translation.other
+            if other:
+                await self._send(English(sentence_id=sentence_id, en=other))
         finally:
             # Never leave later sentences waiting on this one.
             for future in (text_mine, clip_mine):

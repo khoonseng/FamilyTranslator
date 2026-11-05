@@ -1,25 +1,50 @@
 """Translation with per-sentence failover (hard rules 4 and 6): the LLMs in config order
-(Gemini, then Qwen), then Google Cloud Translation as the last resort.
+(Gemini, Qwen, gpt-oss), then Google Cloud Translation as the last resort.
+
+Two directions, each with its own prompt and reply fields:
+- `guide`: the guide's Mandarin → `yue` (spoken to the family), then `en`;
+- `family` (phase 2): a family member's Cantonese or English → `zh_hans` (spoken to the guide),
+  then `other` (English for Cantonese, Cantonese for English).
 
 A sentence moves to the next provider at once, never retried, when the current one:
 - errors or refuses (a Vertex 429 can last for long stretches);
-- is a model with a deadline (Gemini) and its `yue` isn't complete within `yue_deadline_s`;
-- returns `yue` containing Latin letters: a junk word such as "goods" (run 6, 24 Oct).
+- is a model with a deadline (Gemini) and its first field isn't complete within
+  `yue_deadline_s`;
+- (guide direction) returns `yue` containing Latin letters: a junk word such as "goods" (run 6,
+  24 Oct). Replies skip this check: English speakers use names, which stay in Latin letters.
 
-`yue` is returned as soon as its closing quote streams in, so TTS can start; `en` keeps
-streaming in the background (the field TTS needs comes first, architecture doc)."""
+The first field is returned as soon as its closing quote streams in, so TTS can start; the
+second keeps streaming in the background (the field TTS needs comes first, architecture doc)."""
 
 import asyncio
 import json
 import re
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from time import perf_counter
 
 from app import config
 from app.providers.base import Attempt, TokenUsage, Translation, TranslationFailed, outcome_of
 
-_YUE = re.compile(r'"yue"\s*:\s*"((?:[^"\\]|\\.)*)"')
 _LATIN = re.compile(r"[A-Za-z]")
+_CJK = re.compile(r"[一-鿿]")
+
+
+@dataclass(frozen=True)
+class Direction:
+    prompt: str
+    speech: str  # the JSON field the voice speaks, first in the reply
+    other: str  # the second field
+    latin_is_junk: bool
+
+    def field(self, name: str) -> re.Pattern:
+        return re.compile(rf'"{name}"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+DIRECTIONS = {
+    "guide": Direction("guide_to_family", "yue", "en", latin_is_junk=True),
+    "family": Direction("family_to_guide", "zh_hans", "other", latin_is_junk=False),
+}
 
 
 def parse_json_object(text: str) -> dict | None:
@@ -34,14 +59,23 @@ def parse_json_object(text: str) -> dict | None:
     return value if isinstance(value, dict) else None
 
 
-def translation_messages(text: str, context: list[str]) -> list[dict]:
-    """The guide → family prompt with the glossary and the previous sentences (hard rule 7)."""
+def translation_messages(text: str, context: list[str], direction: str = "guide") -> list[dict]:
+    """The direction's prompt with the glossary and the previous sentences (hard rule 7)."""
     system = (
-        config.prompt("guide_to_family")
+        config.prompt(DIRECTIONS[direction].prompt)
         .replace("{glossary}", config.glossary_text())
         .replace("{context}", "\n".join(f"- {c}" for c in context) or "(none)")
     )
     return [{"role": "system", "content": system}, {"role": "user", "content": text}]
+
+
+def fallback_targets(text: str, direction: str) -> tuple[str, str]:
+    """Cloud Translation's two target languages. For a reply the second one is the family's
+    other language: English if the reply is written in Chinese characters (Cantonese), else
+    Cantonese. This only picks a display language for typed or transcribed text."""
+    if direction == "guide":
+        return "yue", "en"
+    return "zh-CN", ("en" if _CJK.search(text) else "yue")
 
 
 def _estimate_tokens(messages: list[dict]) -> int:
@@ -100,39 +134,42 @@ class Translator:
                 except Exception:  # noqa: BLE001 - the first sentence will simply fail over
                     pass
 
-    async def translate(self, text: str, context: list[str]) -> Translation:
+    async def translate(
+        self, text: str, context: list[str], direction: str = "guide"
+    ) -> Translation:
         started = perf_counter()
-        messages = translation_messages(text, context)
+        way = DIRECTIONS[direction]
+        messages = translation_messages(text, context, direction)
         attempts: list[Attempt] = []
         for model in self.models:
             t0 = perf_counter()
             try:
-                yue, en = await self._from_llm(model, messages)
+                speech, other = await self._from_llm(model, messages, way)
             except _Skip as skip:
                 outcome = skip.outcome
             except Exception as exc:  # noqa: BLE001 - any failure moves to the next provider
                 outcome = outcome_of(exc)
             else:
                 return Translation(
-                    yue, en, model.name, round(perf_counter() - started, 3), attempts
+                    speech, other, model.name, round(perf_counter() - started, 3), attempts
                 )
             attempts.append(Attempt(model.name, outcome, round(perf_counter() - t0, 3)))
-        return await self._from_fallback(text, started, attempts)
+        return await self._from_fallback(text, started, attempts, direction)
 
-    async def _from_llm(self, model, messages: list[dict]) -> tuple[str, asyncio.Task]:
+    async def _from_llm(self, model, messages: list[dict], way: Direction):
         stream = _Stream(model.stream(messages))
         try:
-            return await self._yue_or_skip(model, stream)
+            return await self._speech_or_skip(model, stream, way)
         except BaseException:
             if stream.usage is None:  # an abandoned reply still cost its prompt: estimate it
                 self._bill(model.name, TokenUsage(_estimate_tokens(messages), 0))
             raise
 
-    async def _yue_or_skip(self, model, stream: "_Stream") -> tuple[str, asyncio.Task]:
+    async def _speech_or_skip(self, model, stream: "_Stream", way: Direction):
         limit = self.yue_deadline_s if model.deadline else self.timeout_s
         try:
             async with asyncio.timeout(limit):
-                match = await stream.read_until(_YUE)
+                match = await stream.read_until(way.field(way.speech))
         except TimeoutError:
             await stream.close()
             raise _Skip("deadline" if model.deadline else "timeout") from None
@@ -142,19 +179,19 @@ class Translator:
         if stream.usage:
             self._bill(model.name, stream.usage)
         if match:
-            yue = json.loads(f'"{match.group(1)}"').strip()
-        else:  # the stream ended without a recognisable "yue": one last look at the whole reply
-            yue = str((parse_json_object(stream.text) or {}).get("yue", "")).strip()
-        if not yue:
+            speech = json.loads(f'"{match.group(1)}"').strip()
+        else:  # the stream ended without a recognisable field: one last look at the whole reply
+            speech = str((parse_json_object(stream.text) or {}).get(way.speech, "")).strip()
+        if not speech:
             await stream.close()
             raise _Skip("bad_json")
-        if _LATIN.search(yue):
+        if way.latin_is_junk and _LATIN.search(speech):
             await stream.close()
             raise _Skip("junk")
-        return yue, asyncio.ensure_future(self._rest_en(model.name, stream))
+        return speech, asyncio.ensure_future(self._rest(model.name, stream, way.other))
 
-    async def _rest_en(self, name: str, stream: "_Stream") -> str:
-        """Reads the rest of the reply for `en`. Never raises: English is a nice-to-have."""
+    async def _rest(self, name: str, stream: "_Stream", field: str) -> str:
+        """Reads the rest of the reply for the second field. Never raises: it is a nice-to-have."""
         billed = stream.usage is not None
         try:
             async with asyncio.timeout(self.timeout_s):
@@ -163,35 +200,35 @@ class Translator:
             await stream.close()
         if stream.usage and not billed:
             self._bill(name, stream.usage)
-        return str((parse_json_object(stream.text) or {}).get("en", "")).strip()
+        return str((parse_json_object(stream.text) or {}).get(field, "")).strip()
 
     async def _from_fallback(
-        self, text: str, started: float, attempts: list[Attempt]
+        self, text: str, started: float, attempts: list[Attempt], direction: str
     ) -> Translation:
         t0 = perf_counter()
         if self.meter:
-            self.meter.mt(len(text) * 2)  # two calls: yue and en
-        yue_task, en_task = self.fallback.translate(text)
+            self.meter.mt(len(text) * 2)  # two calls
+        first_task, second_task = self.fallback.translate(text, fallback_targets(text, direction))
         try:
-            yue = (await asyncio.wait_for(yue_task, self.timeout_s)).strip()
-            if not yue:
+            speech = (await asyncio.wait_for(first_task, self.timeout_s)).strip()
+            if not speech:
                 raise ValueError("empty")
         except Exception as exc:  # noqa: BLE001
-            en_task.cancel()
+            second_task.cancel()
             attempts.append(
                 Attempt(self.fallback.name, outcome_of(exc), round(perf_counter() - t0, 3))
             )
             raise TranslationFailed(attempts) from None
 
-        async def en() -> str:
+        async def other() -> str:
             try:
-                return (await asyncio.wait_for(en_task, self.timeout_s)).strip()
+                return (await asyncio.wait_for(second_task, self.timeout_s)).strip()
             except Exception:  # noqa: BLE001
                 return ""
 
         return Translation(
-            yue,
-            asyncio.ensure_future(en()),
+            speech,
+            asyncio.ensure_future(other()),
             self.fallback.name,
             round(perf_counter() - started, 3),
             attempts,
