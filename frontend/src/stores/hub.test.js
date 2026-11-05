@@ -47,11 +47,28 @@ const sentence = (id, bubble = 1) => ({
 
 let hub, socket, capture;
 
+// The audio element the hub plays Mandarin replies on.
+class FakeReplyOutput {
+  constructor() {
+    this.played = [];
+    this.stops = 0;
+  }
+  play(id) {
+    this.played.push(id);
+  }
+  stop() {
+    this.stops++;
+  }
+}
+
+let replyOutput;
+
 beforeEach(() => {
   setActivePinia(createPinia());
   socket = new FakeSocket();
   capture = new FakeCapture();
-  setHubParts({ socket, capture, makeCapture: null });
+  replyOutput = new FakeReplyOutput();
+  setHubParts({ socket, capture, makeCapture: null, replyOutput });
   hub = useHubStore();
   hub.screen = "hub";
 });
@@ -208,5 +225,49 @@ describe("hub store: never deaf without saying so", () => {
     expect(hub.lastId).toBe(3);
     hub.receive({ type: "day", day: "2026-12-20" });
     expect([hub.day, hub.lastId, hub.bubbles]).toEqual(["2026-12-20", 0, []]);
+  });
+});
+
+describe("hub store: family replies (phase 2)", () => {
+  const reply = (id) => ({
+    type: "sentence", id, bubble_id: id, kind: "reply", zh: "幾點集合？", yue: "",
+    mandarin: "几点集合？", status: "ok",
+  });
+
+  it("shows a reply with its Mandarin, and a Cantonese clip is never played", () => {
+    hub.receive(reply(5));
+    hub.receiveClip(4, new ArrayBuffer(4), { for_hub: false }); // a guide sentence's clip
+    expect([hub.sentences[5].kind, hub.sentences[5].mandarin]).toEqual(["reply", "几点集合？"]);
+    expect(replyOutput.played).toEqual([]);
+  });
+
+  it("with Guide off, a reply's Mandarin plays at once", async () => {
+    hub.receive(reply(5));
+    hub.receiveClip(5, new ArrayBuffer(4), { for_hub: true });
+    await new Promise((r) => setTimeout(r));
+    expect([replyOutput.played, hub.replyPlaying]).toEqual([[5], 5]);
+  });
+
+  it("while listening, the mic is fully released to play, and reopened after", async () => {
+    let made;
+    setHubParts({ capture: null, makeCapture: async (o) => (made = new FakeCapture(o)) });
+    await hub.setGuide(true);
+    const before = made;
+    const player = hub.replyPlayer();
+    player.quietSince = -Infinity; // the guide has been quiet long enough
+    hub.receive(reply(5));
+    hub.receiveClip(5, new ArrayBuffer(4), { for_hub: true });
+    await new Promise((r) => setTimeout(r));
+    expect([before.destroyed, replyOutput.played]).toEqual([true, [5]]);
+    await player.ended(5);
+    expect([hub.listening, made === before, hub.replyPlaying]).toEqual([true, false, null]);
+  });
+
+  it("a tap stops the reply", async () => {
+    hub.receive(reply(5));
+    hub.receiveClip(5, new ArrayBuffer(4), { for_hub: true });
+    await new Promise((r) => setTimeout(r));
+    await hub.stopReply();
+    expect([replyOutput.stops, hub.replyPlaying]).toEqual([1, null]);
   });
 });

@@ -44,6 +44,14 @@ const connectionLabel = {
       <p v-if="hub.remotePaused && !hub.listening" class="rounded-lg bg-amber-100 p-3 text-lg text-amber-900">
         已由另一部手機暫停 · Paused from another phone
       </p>
+      <!-- Family replies (phase 2): the Mandarin plays to the guide; a tap stops it. -->
+      <button v-if="hub.replyPlaying !== null"
+        class="rounded-2xl bg-sky-600 p-5 text-2xl font-bold text-white shadow" @click="hub.stopReply()">
+        🔊 播放回覆中 · Playing a reply — tap to stop
+      </button>
+      <p v-else-if="hub.repliesWaiting" class="rounded-lg bg-sky-100 p-3 text-lg text-sky-900">
+        {{ hub.repliesWaiting }} 个回覆等导游停一停 · {{ hub.repliesWaiting }} waiting for the guide to pause
+      </p>
       <!-- Never deaf without saying so (weeks 6–7 step 2). -->
       <button v-if="hub.listening && hub.needTap"
         class="rounded-2xl bg-red-600 p-5 text-2xl font-bold text-white shadow" @click="hub.tapResume()">
@@ -111,8 +119,22 @@ const connectionLabel = {
       <p v-if="!hub.bubbles.length" class="py-10 text-center text-lg text-slate-500">
         Tap Guide and speak Mandarin, or type it above.
       </p>
-      <article v-for="bubble in hub.bubbles" :key="bubble.id"
-        class="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm">
+      <template v-for="bubble in hub.bubbles" :key="bubble.id">
+      <!-- A family reply: on the right in green, the Mandarin (what the guide hears) large. -->
+      <article v-if="hub.sentences[bubble.sentenceIds[0]]?.kind === 'reply'"
+        class="ml-10 flex flex-col gap-1 self-end rounded-2xl bg-emerald-100 p-4 shadow-sm"
+        :class="hub.replyPlaying === bubble.sentenceIds[0] ? 'ring-4 ring-sky-500' : ''">
+        <div v-for="id in bubble.sentenceIds" :key="id" class="flex flex-col gap-1">
+          <p class="text-right text-sm font-semibold text-emerald-800">家人问 · Family asks 🙋</p>
+          <p v-if="hub.sentences[id].status === 'ok'" class="text-3xl leading-snug text-slate-900">
+            {{ hub.sentences[id].mandarin }}
+          </p>
+          <p v-else class="text-xl text-amber-800">未能翻译 · Not translated: please interpret</p>
+          <p class="text-base text-slate-600">{{ hub.sentences[id].zh }}</p>
+        </div>
+      </article>
+      <article v-else
+        class="mr-6 flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm">
         <div v-for="id in bubble.sentenceIds" :key="id" class="flex flex-col gap-1">
           <template v-if="hub.sentences[id].status === 'ok'">
             <p class="text-3xl leading-snug text-slate-900">{{ hub.sentences[id].yue }}</p>
@@ -127,6 +149,7 @@ const connectionLabel = {
           </template>
         </div>
       </article>
+      </template>
     </section>
   </main>
 </template>

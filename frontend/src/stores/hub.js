@@ -11,14 +11,23 @@
 // hears the chosen mic. A lost clip-on means the phone's own mic, a red banner and a switch
 // back when it returns; an audio engine iOS won't restart means "Tap to resume listening".
 // Host phones are told either way.
+//
+// Family replies (phase 2): the hub shows each reply with its Mandarin large, and plays the
+// Mandarin to the guide through its loudspeaker once he has been quiet for 2 s (see
+// audio/replyPlayer.js). To play, it fully stops the mic (iOS sends sound to an open Bluetooth
+// clip-on), then reopens it; a tap stops a reply. Replies are never caught up after a
+// reconnect: they were for that moment.
 
 import { defineStore } from "pinia";
+import { ClipOutput } from "../audio/clipOutput.js";
 import { microphones } from "../audio/micSettings.js";
 import { healthPlan, micPlan, micStatus } from "../audio/micWatch.js";
+import { ReplyPlayer } from "../audio/replyPlayer.js";
 import { keepScreenOn, store, stored } from "../lib/device.js";
 import { RoomSocket } from "../lib/roomSocket.js";
 
 const CHECK_EVERY_MS = 3000;
+const REPLY_TICK_MS = 250;
 
 let socket = null;
 let capture = null;
@@ -29,6 +38,10 @@ let checking = false; // one check or restart at a time
 let watching = false; // the timer and listeners, set up once
 let lastReport = "";
 let listInputs = async () => microphones(await navigator.mediaDevices.enumerateDevices());
+let replyOutput = null; // the audio element the Mandarin replies play on
+let replies = null; // the ReplyPlayer
+let replying = false; // the mic is released for a reply: no mic checks meanwhile
+const replyClips = new Map(); // sentence id -> the reply's Mandarin MP3
 
 // The VAD's audio engine. iOS starts an AudioContext suspended unless it is created or resumed
 // inside a tap; the VAD would make its own only after its model loads, long after the Guide
@@ -47,6 +60,11 @@ export function setHubParts(parts) {
   if ("makeCapture" in parts) makeCapture = parts.makeCapture;
   if ("listInputs" in parts) listInputs = parts.listInputs;
   if ("audioContext" in parts) audioContext = parts.audioContext;
+  if ("replyOutput" in parts) {
+    replyOutput = parts.replyOutput;
+    replies = null;
+    replying = false;
+  }
   if ("capture" in parts) {
     capture = parts.capture;
     activeId = "";
@@ -75,7 +93,9 @@ export const useHubStore = defineStore("hub", {
     needTap: false, // iOS won't restart the mic by itself: "Tap to resume listening"
     day: "",
     bubbles: [], // [{ id, sentenceIds: [] }]
-    sentences: {}, // id -> { id, bubbleId, zh, yue, en, status, clip }
+    sentences: {}, // id -> { id, bubbleId, kind, zh, yue, mandarin, en, status, clip }
+    replyPlaying: null, // the reply on the loudspeaker now (sentence id)
+    repliesWaiting: 0, // replies waiting for the guide to pause
   }),
 
   getters: {
@@ -100,9 +120,33 @@ export const useHubStore = defineStore("hub", {
       this.screen = "credentials";
     },
 
+    // The reply player, made once; its audio element is unlocked by the Start and Guide taps.
+    replyPlayer() {
+      if (!replyOutput) {
+        replyOutput = new ClipOutput({
+          load: async (id) => replyClips.get(id),
+          onEnded: (id) => replies.ended(id),
+          onInterrupted: (id) => replies.ended(id),
+        });
+      }
+      replies ||= new ReplyPlayer({
+        output: { play: (id) => replyOutput.play(id), stop: () => replyOutput.stop() },
+        releaseMic: () => this.releaseMicForReply(),
+        reopenMic: () => this.reopenMicAfterReply(),
+        onChange: () => {
+          this.replyPlaying = replies.playing?.id ?? null;
+          this.repliesWaiting = replies.waiting;
+        },
+      });
+      replies.listening = this.listening;
+      return replies;
+    },
+
     // Start, or Become hub on a host phone: this phone takes over as the hub.
     start() {
       wakeAudio();
+      this.replyPlayer();
+      replyOutput.unlock?.(); // inside the tap: iOS lets this element play replies later
       socket?.close();
       takeover = true;
       socket = new RoomSocket({
@@ -121,10 +165,7 @@ export const useHubStore = defineStore("hub", {
           this.screen = "credentials";
         },
         onMessage: (message) => this.receive(message),
-        onClip: (id) => {
-          // Shown as text only: the hub never plays Cantonese.
-          if (this.sentences[id]) this.sentences[id].clip = "ready";
-        },
+        onClip: (id, data, header) => this.receiveClip(id, data, header),
       });
       socket.connect();
       keepScreenOn();
@@ -138,6 +179,7 @@ export const useHubStore = defineStore("hub", {
       if (watching || typeof document === "undefined") return;
       watching = true;
       setInterval(() => this.checkMic(), CHECK_EVERY_MS);
+      setInterval(() => replies?.tick(), REPLY_TICK_MS);
       navigator.mediaDevices?.addEventListener?.("devicechange", () => this.checkMic());
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") this.checkMic({ resume: true });
@@ -173,9 +215,13 @@ export const useHubStore = defineStore("hub", {
     // A tap on Guide reaches here without an await first, so wakeAudio() still counts as a tap.
     async setGuide(on) {
       this.micError = "";
-      if (on) wakeAudio();
+      if (on) {
+        wakeAudio();
+        if (!replying) replyOutput?.unlock?.(); // a tap: keeps the reply player allowed to play
+      }
       if (!on) {
         this.listening = false;
+        this.replyPlayer().setListening(false);
         socket.sendJson({ type: "mode", mode: "off" });
         await capture?.pause();
         return;
@@ -186,7 +232,12 @@ export const useHubStore = defineStore("hub", {
           // Loaded on first use: the VAD's runtime is large, and the first screens needn't wait.
           const createCapture = makeCapture ?? (await import("../audio/capture.js")).createCapture;
           capture = await createCapture({
-            send: (message) => socket.sendJson(message),
+            send: (message) => {
+              // The guide speaking, by the hub's own VAD: replies wait for 2 s of quiet.
+              if (message.type === "segment_start") replies?.speechStarted();
+              if (message.type === "segment_end") replies?.speechEnded();
+              socket.sendJson(message);
+            },
             sendAudio: (buffer) => socket.sendAudio(buffer),
             audioContext,
             deviceId: openId,
@@ -208,6 +259,7 @@ export const useHubStore = defineStore("hub", {
         this.micError = error?.name === "NotAllowedError" ? "mic-denied" : "mic-failed";
         return;
       }
+      if (!this.listening) this.replyPlayer().setListening(true);
       this.listening = true;
       this.needTap = false;
       this.micLabel = capture.input.label;
@@ -227,7 +279,7 @@ export const useHubStore = defineStore("hub", {
     // Is the hub still hearing what it should? Runs every few seconds while listening, on
     // device changes and track events, and (resume) when the page comes back from another app.
     async checkMic({ resume = false } = {}) {
-      if (!this.listening || checking) return;
+      if (!this.listening || checking || replying) return;
       checking = true;
       try {
         let inputs;
@@ -254,6 +306,30 @@ export const useHubStore = defineStore("hub", {
       } finally {
         checking = false;
       }
+    },
+
+    // A reply is about to play: stop the mic completely, so iOS plays on the loudspeaker.
+    async releaseMicForReply() {
+      replying = true;
+      if (capture) {
+        const old = capture;
+        capture = null;
+        activeId = "";
+        await old.destroy();
+      }
+      this.level = 0;
+    },
+
+    // The reply is over (or tapped away): listen again with the chosen mic.
+    async reopenMicAfterReply() {
+      replying = false;
+      await this.restartCapture();
+    },
+
+    // The tap on "Playing a reply": stop it and listen again at once.
+    async stopReply() {
+      wakeAudio();
+      await replies?.stop();
     },
 
     // The "Tap to resume listening" banner: inside the tap, so iOS lets the audio engine run.
@@ -330,6 +406,16 @@ export const useHubStore = defineStore("hub", {
       this.sentences = {};
     },
 
+    // The guide's sentences are text only on the hub (it never plays Cantonese); a reply's
+    // Mandarin clip (for_hub) is queued for the guide.
+    receiveClip(id, data, header = {}) {
+      const sentence = this.sentences[id];
+      if (sentence) sentence.clip = "ready";
+      if (!header.for_hub) return;
+      replyClips.set(id, data);
+      this.replyPlayer().add(id, data);
+    },
+
     receive(message) {
       const sentence = this.sentences[message.sentence_id];
       if (message.type === "sentence") {
@@ -337,8 +423,10 @@ export const useHubStore = defineStore("hub", {
         this.sentences[message.id] = {
           id: message.id,
           bubbleId: message.bubble_id,
+          kind: message.kind ?? "guide",
           zh: message.zh,
           yue: message.yue,
+          mandarin: message.mandarin ?? "",
           en: "",
           status: message.status,
           clip: message.status === "ok" ? "pending" : "none",
