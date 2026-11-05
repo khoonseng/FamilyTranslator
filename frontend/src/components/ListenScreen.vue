@@ -4,12 +4,20 @@
 // sentence replays just that sentence (hard rule 11). Unplayed sentences carry a blue marker.
 // Host phones also see which speech-to-text and translator produced each sentence.
 // Phones and tablets alike: one centred column, with larger text on an iPad.
-import { nextTick, onMounted, watch } from "vue";
+// Family replies to the guide (phase 2) look like WhatsApp (owner decision 2026-11-05): the
+// guide on the left in white, replies on the right in green, "You" on the asker's own phone.
+import { computed, nextTick, onMounted, watch } from "vue";
 import { sourceLabel } from "../lib/sources.js";
 import { useListenStore } from "../stores/listen.js";
 import HostPanel from "./HostPanel.vue";
+import TalkBar from "./TalkBar.vue";
 
 const listen = useListenStore();
+
+const isReply = (bubble) => listen.sentences[bubble.sentenceIds[0]]?.kind === "reply";
+const showPlayer = computed(
+  () => listen.player.showJump || (listen.player.state !== "live" && listen.player.waiting),
+);
 
 const unplayed = (id) => {
   const s = listen.sentences[id];
@@ -71,13 +79,37 @@ const pill = (on) =>
       </div>
     </header>
 
-    <section class="mx-auto flex max-w-3xl flex-col gap-3 p-3 pb-36">
+    <section class="mx-auto flex max-w-3xl flex-col gap-3 p-3"
+      :class="listen.canTalk ? 'pb-64' : 'pb-36'">
       <p v-if="!listen.bubbles.length" class="py-16 text-center text-2xl text-slate-500 md:text-3xl">
         等緊導遊講嘢… · Waiting for the guide…
       </p>
 
-      <article v-for="bubble in listen.bubbles" :key="bubble.id"
-        class="flex gap-3 rounded-2xl bg-white p-3 shadow-sm md:gap-4 md:p-5"
+      <template v-for="bubble in listen.bubbles" :key="bubble.id">
+      <!-- A family reply to the guide: on the right, in green; text only (its Mandarin is for
+           the guide, played by the hub). -->
+      <article v-if="isReply(bubble)"
+        class="ml-10 flex flex-col gap-1 self-end rounded-2xl bg-emerald-100 p-3 shadow-sm md:ml-24 md:p-5">
+        <div v-for="id in bubble.sentenceIds" :key="id" class="flex flex-col gap-1">
+          <p class="text-right text-sm font-semibold text-emerald-800 md:text-base">
+            {{ listen.sentences[id].asker === listen.device ? "你 · You" : "家人 · Family" }} 🙋
+          </p>
+          <p class="text-2xl leading-snug text-slate-900 md:text-4xl">{{ listen.sentences[id].zh }}</p>
+          <p v-if="listen.sentences[id].status !== 'ok'" class="text-base text-amber-800 md:text-xl">
+            未能翻譯 · Not translated
+          </p>
+          <p v-else-if="listen.sentences[id].en" class="text-lg text-slate-700 md:text-2xl">
+            {{ listen.sentences[id].en }}
+          </p>
+          <p v-if="listen.host && sourceLabel(listen.sentences[id]).text" class="text-sm md:text-base"
+            :class="sourceLabel(listen.sentences[id]).fallback ? 'text-amber-700' : 'text-slate-400'">
+            {{ listen.sentences[id].mandarin }} · {{ sourceLabel(listen.sentences[id]).text }}
+          </p>
+        </div>
+      </article>
+
+      <article v-else
+        class="mr-6 flex gap-3 rounded-2xl bg-white p-3 shadow-sm md:mr-16 md:gap-4 md:p-5"
         :class="bubble.sentenceIds.some(unplayed) ? 'ring-2 ring-blue-500' : ''">
         <button class="h-14 w-14 shrink-0 rounded-full bg-blue-100 text-2xl text-blue-800 active:bg-blue-200 disabled:opacity-30 md:h-16 md:w-16"
           :disabled="!listen.sound" aria-label="播放 Play" @click="listen.replayBubble(bubble)">
@@ -111,21 +143,24 @@ const pill = (on) =>
           </div>
         </div>
       </article>
+      </template>
     </section>
 
-    <footer v-if="listen.player.showJump || (listen.player.state !== 'live' && listen.player.waiting)"
-      class="fixed inset-x-0 bottom-0 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-      <div class="mx-auto max-w-3xl">
-        <button v-if="listen.player.showJump"
-          class="w-full rounded-2xl bg-amber-500 p-5 text-3xl font-bold text-white shadow-lg active:bg-amber-600"
-          @click="listen.jumpToLatest()">
-          跳到最新 · Jump to latest
-        </button>
-        <button v-else
-          class="w-full rounded-2xl bg-blue-600 p-5 text-3xl font-bold text-white shadow-lg active:bg-blue-700"
-          @click="listen.playNew()">
-          播放 {{ listen.player.waiting }} 句新嘅 · Play {{ listen.player.waiting }} new
-        </button>
+    <footer class="fixed inset-x-0 bottom-0 bg-slate-100/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div class="mx-auto flex max-w-3xl flex-col gap-2">
+        <template v-if="showPlayer">
+          <button v-if="listen.player.showJump"
+            class="w-full rounded-2xl bg-amber-500 p-5 text-3xl font-bold text-white shadow-lg active:bg-amber-600"
+            @click="listen.jumpToLatest()">
+            跳到最新 · Jump to latest
+          </button>
+          <button v-else
+            class="w-full rounded-2xl bg-blue-600 p-5 text-3xl font-bold text-white shadow-lg active:bg-blue-700"
+            @click="listen.playNew()">
+            播放 {{ listen.player.waiting }} 句新嘅 · Play {{ listen.player.waiting }} new
+          </button>
+        </template>
+        <TalkBar />
       </div>
     </footer>
 

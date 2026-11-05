@@ -67,6 +67,16 @@ export class RoomSocket {
     }
   }
 
+  // Say hello again now (e.g. the hub PIN was just entered to unlock Talk).
+  restart() {
+    if (this.stopped) return;
+    const old = this.ws;
+    this.ws = null;
+    old?.close();
+    this.retry = 0;
+    this.connect();
+  }
+
   get open() {
     return this.ws?.readyState === WebSocket.OPEN;
   }

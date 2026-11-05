@@ -12,11 +12,18 @@
 // - after a reconnect: the sentences missed meanwhile are new, so live plays them in order
 //   (with Jump to latest if they pile up);
 // - a clip asked for again for a replay is only cached.
+//
+// Family replies (phase 2): a family phone unlocks Talk with the hub PIN ("Ask the guide"); host
+// phones have it already. Hold to talk records the phone's own mic only while held, after the
+// guide has been quiet for 2 s and while no other phone is talking; it pauses the phone's own
+// playback and keep-alive meanwhile (hard rules 12 and 13). Typing works any time. Replies show
+// as text (their Mandarin is for the guide, played by the hub); the asker's phone says "You".
 
 import { defineStore } from "pinia";
 import { ClipOutput } from "../audio/clipOutput.js";
 import { KeepAlive } from "../audio/keepAlive.js";
 import { ListenerPlayer } from "../audio/listenerPlayer.js";
+import { MAX_TALK_S, startRecorder, talkBlock } from "../audio/talk.js";
 import { ClipCache } from "../lib/clipCache.js";
 import { keepScreenOn, store, stored } from "../lib/device.js";
 import { RoomSocket } from "../lib/roomSocket.js";
@@ -32,6 +39,20 @@ let historyUpTo = 0; // sentences up to here were said before this phone joined 
 let helloLastId = 0; // what this phone said it had in its last hello
 const recent = new Map(); // sentence id -> MP3 bytes
 const refetching = new Set(); // clips asked for again for a replay
+let makeRecorder = startRecorder;
+let recorder = null; // the phone's mic while Talk is held
+let talkTimers = [];
+let resumeLive = false; // auto-play was on before Talk: switch it back on afterwards
+
+// An anonymous id this phone keeps, so its own replies can say "You" (no names).
+function deviceId() {
+  let id = stored("deviceId");
+  if (!id) {
+    id = globalThis.crypto?.randomUUID?.() ?? String(Math.random()).slice(2);
+    store("deviceId", id);
+  }
+  return id;
+}
 
 let linkToken = ""; // from the link just opened, in case the phone can't store it (private mode)
 
@@ -46,6 +67,8 @@ export function setListenParts(parts) {
   socket = parts.socket ?? socket;
   player = parts.player ?? player;
   cache = parts.cache ?? cache;
+  keeper = parts.keeper ?? keeper;
+  makeRecorder = parts.makeRecorder ?? makeRecorder;
   historyUpTo = helloLastId = 0;
   recent.clear();
   refetching.clear();
@@ -72,7 +95,7 @@ export const useListenStore = defineStore("listen", {
   state: () => ({
     token: linkToken || stored("roomToken"),
     host: false, // the /host page
-    pin: stored("hubPin"), // host phones: the same PIN and token as the hub page
+    pin: stored("hubPin"), // host phones, and family phones that unlocked Talk
     apiToken: stored("apiToken"),
     screen: "start", // credentials (host phones) | start | room
     refused: "", // bad_credentials | link_changed: the link (or the host's PIN) no longer works
@@ -86,10 +109,21 @@ export const useListenStore = defineStore("listen", {
       mic: "",
       micLost: false,
       interrupted: false,
+      guideTalking: false, // Talk can't start (the guide has priority)
+      familyTalking: false, // another phone holds Talk
     },
+    device: deviceId(),
+    canTalk: false, // the server accepted the hub PIN: Talk and typing to the guide
+    pinWrong: false,
+    talking: false, // Talk is held
+    talkLive: false, // ...and the mic is open: speak now
+    talkSeconds: 0,
+    talkError: "", // guide_talking | someone_talking | mic-denied | mic-failed
     day: stored("listenDay"),
     bubbles: [], // [{ id, sentenceIds: [] }], oldest first
-    sentences: {}, // id -> { id, bubbleId, zh, yue, en, status, stt, provider, voice, clip, played }
+    // id -> { id, bubbleId, kind, zh, yue, mandarin, en, asker, status, stt, provider, voice,
+    //         clip, played }; for a reply, `zh` is what was said and `en` its other language
+    sentences: {},
     player: { state: "live", waiting: 0, showJump: false, playingId: null },
     sound: stored("soundOff") !== "1",
     english: stored("english") === "1",
@@ -162,12 +196,20 @@ export const useListenStore = defineStore("listen", {
 
     hello() {
       helloLastId = this.lastId;
-      const access = this.host ? { pin: this.pin, token: this.apiToken } : { room: this.token };
-      return { role: "listener", ...access, day: this.day, last_id: helloLastId };
+      const access = this.host
+        ? { pin: this.pin, token: this.apiToken }
+        : { room: this.token, ...(this.pin ? { pin: this.pin } : {}) };
+      return { role: "listener", ...access, device: this.device, day: this.day, last_id: helloLastId };
     },
 
     ready(message) {
       if (this.host) socket.sendJson({ type: "link" }); // for Share link
+      this.canTalk = !!message.talk;
+      if (!this.host && this.pin && !message.talk) {
+        this.pinWrong = true; // a wrong hub PIN: the phone still listens, just can't talk
+        this.pin = "";
+        store("hubPin", "");
+      }
       if (message.day !== this.day) this.newDay(message.day);
       historyUpTo = this.lastId ? 0 : message.latest_id;
       // Clips this phone missed when its connection dropped between a sentence and its clip.
@@ -197,17 +239,22 @@ export const useListenStore = defineStore("listen", {
       const sentence = this.sentences[message.sentence_id];
       if (message.type === "sentence") {
         const old = this.sentences[message.id];
+        const reply = message.kind === "reply"; // text only here: its Mandarin is for the guide
         this.addSentence({
           id: message.id,
           bubbleId: message.bubble_id,
+          kind: message.kind ?? "guide",
           zh: message.zh,
           yue: message.yue,
+          mandarin: message.mandarin ?? "",
+          asker: message.asker ?? "",
           en: old?.en ?? "",
           status: message.status,
           stt: message.stt ?? "", // shown on host phones only
           provider: message.provider ?? "",
-          clip: old?.clip === "ready" ? "ready" : message.status === "ok" ? "pending" : "none",
-          played: old?.played ?? message.id <= historyUpTo,
+          clip: reply ? "none"
+            : old?.clip === "ready" ? "ready" : message.status === "ok" ? "pending" : "none",
+          played: reply || (old?.played ?? message.id <= historyUpTo),
         });
         this.persist(message.id);
       } else if (message.type === "english" && sentence) {
@@ -224,6 +271,8 @@ export const useListenStore = defineStore("listen", {
           mic: message.mic ?? "", // external (the clip-on) | phone | "" (not reported)
           micLost: !!message.mic_lost,
           interrupted: !!message.interrupted,
+          guideTalking: !!message.guide_talking,
+          familyTalking: !!message.family_talking,
         };
       } else if (message.type === "day") {
         this.newDay(message.day);
@@ -231,6 +280,9 @@ export const useListenStore = defineStore("listen", {
         this.spend = { usd: message.usd, warn: message.warn, warnUsd: message.warn_usd };
       } else if (message.type === "join_link") {
         this.joinToken = message.token;
+      } else if (message.type === "error" && ["guide_talking", "someone_talking"].includes(message.code)) {
+        this.talkError = message.code; // the server refused Talk: the guide or someone else first
+        this.stopTalk({ refused: true });
       }
     },
 
@@ -342,6 +394,69 @@ export const useListenStore = defineStore("listen", {
 
     resumeAudio() {
       keeper.resume();
+    },
+
+    // --- family replies (phase 2) -----------------------------------------------------------
+
+    // "Ask the guide": the hub PIN, once per phone. The server checks it on the next hello.
+    unlockTalk(pin) {
+      this.pin = pin.trim();
+      this.pinWrong = false;
+      store("hubPin", this.pin);
+      socket?.restart();
+    },
+
+    // Inside the press on Hold to talk: iOS only lets the mic's audio engine start in a tap.
+    async startTalk() {
+      const block = talkBlock({ ...this.hub, canTalk: this.canTalk, talking: this.talking });
+      if (block || this.talking) return;
+      this.talkError = "";
+      this.talking = true;
+      this.talkLive = false;
+      this.talkSeconds = 0;
+      resumeLive = player?.state === "live";
+      player?.pause(); // the phone's own playback stops while Talk records (hard rule 13)
+      keeper?.stop(); // and the keep-alive (hard rule 12)
+      socket.sendJson({ type: "talk_start" });
+      let opened;
+      try {
+        opened = await makeRecorder({ onPcm: (buffer) => socket.sendAudio(buffer) });
+      } catch (error) {
+        this.talkError = error?.name === "NotAllowedError" ? "mic-denied" : "mic-failed";
+        this.stopTalk();
+        return;
+      }
+      if (!this.talking) {
+        opened.stop(); // let go before the mic was even open
+        return;
+      }
+      recorder = opened;
+      this.talkLive = true;
+      talkTimers = [
+        setTimeout(() => this.stopTalk(), MAX_TALK_S * 1000), // the 30 s cap
+        setInterval(() => (this.talkSeconds += 1), 1000),
+      ];
+    },
+
+    // Release (or the cap, or a refusal): the mic is fully stopped and playback comes back.
+    stopTalk({ refused = false } = {}) {
+      if (!this.talking) return;
+      this.talking = false;
+      this.talkLive = false;
+      talkTimers.forEach((t) => (clearTimeout(t), clearInterval(t)));
+      talkTimers = [];
+      recorder?.stop();
+      recorder = null;
+      if (!refused) socket.sendJson({ type: "talk_end" });
+      keeper?.start();
+      if (resumeLive) player?.playNew();
+    },
+
+    sendReply(text) {
+      const trimmed = text.trim();
+      if (!trimmed || !this.canTalk) return false;
+      socket.sendJson({ type: "reply_text", text: trimmed });
+      return true;
     },
 
     // --- host phones ----------------------------------------------------------------------

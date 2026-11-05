@@ -101,7 +101,9 @@ describe("listener store: joining and catching up", () => {
   it("a reloaded page shows its own bubbles and catches up from its last sentence", async () => {
     await cache.putSentence("2026-12-19", { id: 4, bubbleId: 2, yue: "四", clip: "ready", played: true });
     for (const s of await cache.loadDay("2026-12-19")) listen.addSentence(s);
-    expect(listen.hello()).toEqual({ role: "listener", room: "", day: "2026-12-19", last_id: 4 });
+    expect(listen.hello()).toEqual({
+      role: "listener", room: "", device: listen.device, day: "2026-12-19", last_id: 4,
+    });
   });
 });
 
@@ -155,7 +157,8 @@ describe("listener store: sentences and clips", () => {
     listen.setHost(true);
     Object.assign(listen, { pin: "11112222", apiToken: "33334444", token: "family-link" });
     expect(listen.hello()).toEqual({
-      role: "listener", pin: "11112222", token: "33334444", day: "2026-12-19", last_id: 0,
+      role: "listener", pin: "11112222", token: "33334444", device: listen.device,
+      day: "2026-12-19", last_id: 0,
     });
     listen.ready({ day: "2026-12-19", latest_id: 0, host: true });
     expect(socket.sent).toEqual([{ type: "link" }]); // for Share link
@@ -170,7 +173,7 @@ describe("listener store: sentences and clips", () => {
   it("a family phone never asks for the join link or sends a PIN", () => {
     listen.token = "family-link";
     expect(listen.hello()).toEqual({
-      role: "listener", room: "family-link", day: "2026-12-19", last_id: 0,
+      role: "listener", room: "family-link", device: listen.device, day: "2026-12-19", last_id: 0,
     });
     listen.ready({ day: "2026-12-19", latest_id: 0, host: false });
     expect(socket.sent).toEqual([]);
@@ -188,11 +191,120 @@ describe("listener store: sentences and clips", () => {
     listen.receive({ type: "hub_status", online: false, listening: false, remote_paused: true });
     expect(listen.hub).toEqual({
       online: false, listening: false, remotePaused: true, mic: "", micLost: false, interrupted: false,
+      guideTalking: false, familyTalking: false,
     });
     listen.receive({
       type: "hub_status", online: true, listening: true, remote_paused: false,
       mic: "phone", mic_lost: true, interrupted: false,
     });
     expect([listen.hub.mic, listen.hub.micLost]).toEqual(["phone", true]);
+  });
+});
+
+describe("listener store: replies to the guide (phase 2)", () => {
+  class TalkSocket extends FakeSocket {
+    constructor() {
+      super();
+      this.audio = [];
+      this.restarts = 0;
+    }
+    sendAudio(buffer) {
+      this.audio.push(buffer);
+    }
+    restart() {
+      this.restarts++;
+    }
+  }
+  class TalkPlayer extends FakePlayer {
+    constructor() {
+      super();
+      this.state = "live";
+      this.pauses = 0;
+      this.resumed = 0;
+    }
+    pause() {
+      this.pauses++;
+      this.state = "paused";
+    }
+    playNew() {
+      this.resumed++;
+      this.state = "live";
+    }
+  }
+  const keeper = { stops: 0, starts: 0, stop() { this.stops++; }, start() { this.starts++; } };
+  let mic, talkSocket, talkPlayer;
+
+  beforeEach(() => {
+    talkSocket = new TalkSocket();
+    talkPlayer = new TalkPlayer();
+    keeper.stops = keeper.starts = 0;
+    mic = { stopped: false, stop() { this.stopped = true; } };
+    setListenParts({
+      socket: talkSocket,
+      player: talkPlayer,
+      keeper,
+      makeRecorder: async ({ onPcm }) => {
+        mic.onPcm = onPcm;
+        return mic;
+      },
+    });
+    listen.canTalk = true;
+  });
+
+  it("the hub PIN unlocks Talk; a wrong one is forgotten and the phone keeps listening", () => {
+    listen.canTalk = false;
+    listen.unlockTalk(" 12345678 ");
+    expect([listen.pin, talkSocket.restarts]).toEqual(["12345678", 1]);
+    expect(listen.hello().pin).toBe("12345678");
+    listen.ready({ day: "2026-12-19", latest_id: 0, talk: false });
+    expect([listen.canTalk, listen.pinWrong, listen.pin]).toEqual([false, true, ""]);
+    listen.unlockTalk("87654321");
+    listen.ready({ day: "2026-12-19", latest_id: 0, talk: true });
+    expect([listen.canTalk, listen.pinWrong]).toEqual([true, false]);
+  });
+
+  it("holding Talk pauses playback and the keep-alive, streams the mic, and release sends it", async () => {
+    await listen.startTalk();
+    expect(talkSocket.sent).toEqual([{ type: "talk_start" }]);
+    expect([talkPlayer.pauses, keeper.stops, listen.talkLive]).toEqual([1, 1, true]);
+    mic.onPcm(new ArrayBuffer(8));
+    expect(talkSocket.audio.length).toBe(1);
+    listen.stopTalk();
+    expect(talkSocket.sent.at(-1)).toEqual({ type: "talk_end" });
+    expect([mic.stopped, keeper.starts, talkPlayer.resumed]).toEqual([true, 1, 1]);
+  });
+
+  it("Talk waits while the guide speaks or another phone talks", async () => {
+    listen.hub.guideTalking = true;
+    await listen.startTalk();
+    listen.hub.guideTalking = false;
+    listen.hub.familyTalking = true;
+    await listen.startTalk();
+    expect(talkSocket.sent).toEqual([]);
+  });
+
+  it("a refusal from the server ends Talk without sending it", async () => {
+    await listen.startTalk();
+    listen.receive({ type: "error", code: "someone_talking" });
+    expect([listen.talking, listen.talkError, mic.stopped]).toEqual([false, "someone_talking", true]);
+    expect(talkSocket.sent).toEqual([{ type: "talk_start" }]);
+  });
+
+  it("a reply shows as text, without audio, and the asker's own phone knows it", () => {
+    listen.receive({
+      type: "sentence", id: 7, bubble_id: 4, kind: "reply", zh: "幾點集合？", yue: "",
+      mandarin: "几点集合？", asker: listen.device, status: "ok",
+    });
+    const reply = listen.sentences[7];
+    expect([reply.kind, reply.clip, reply.played, reply.asker === listen.device]).toEqual([
+      "reply", "none", true, true,
+    ]);
+  });
+
+  it("typing a reply needs Talk to be unlocked", () => {
+    expect(listen.sendReply("  幾點走？ ")).toBe(true);
+    expect(talkSocket.sent).toEqual([{ type: "reply_text", text: "幾點走？" }]);
+    listen.canTalk = false;
+    expect(listen.sendReply("再問")).toBe(false);
   });
 });
