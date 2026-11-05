@@ -9,6 +9,7 @@
 // Bluetooth clip-on is the mic: with the mic running, with capture paused (stream still open),
 // or with the mic stopped. The hub must play Mandarin replies through its own speaker.
 import { onBeforeUnmount, ref } from "vue";
+import { MANDARIN_SAMPLE } from "../audio/mandarinSample.js";
 import { levelOf, micConstraints, microphones } from "../audio/micSettings.js";
 
 const TRICKS = {
@@ -63,15 +64,27 @@ const toneUrl = (() => {
   return () => URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
 })();
 
+// Spike, step 2 (5 Nov): after a mic was used, iOS seemed to leave the sound on the earpiece.
+// "Playback mode" switches Safari's audio session to playback first, which should move it back
+// to the loudspeaker; "auto" afterwards lets the mic open again normally.
+const loudspeaker = ref(true);
+
 // Inside a tap. Notes which state the mic was in, so the log says which variant was tried.
-function playTone() {
+function play(url, what) {
   const state = !stream ? "mic stopped" : paused.value ? "capture paused" : "mic running";
-  tone.src = toneUrl();
+  const route = loudspeaker.value && hasSession ? "playback mode" : "no session change";
+  if (loudspeaker.value && hasSession) setSession("playback");
+  tone.src = url;
+  tone.onended = () => {
+    if (loudspeaker.value && hasSession) setSession("auto");
+  };
   tone.play().then(
-    () => note(`test sound playing (${state}): where do you hear it?`),
-    (error) => note(`test sound failed (${state}): ${error.name}`),
+    () => note(`${what} playing (${state}, ${route}): earpiece or loudspeaker? how far away?`),
+    (error) => note(`${what} failed (${state}, ${route}): ${error.name}`),
   );
 }
+const playTone = () => play(toneUrl(), "test sound");
+const playMandarin = () => play(MANDARIN_SAMPLE, "Mandarin sample");
 
 // Like the hub's half-duplex pause: the mic stream stays open, nothing is listened to.
 function togglePause() {
@@ -258,7 +271,14 @@ onBeforeUnmount(stop);
       </div>
     </div>
 
-    <div class="flex gap-2">
+    <label class="flex items-center gap-3">
+      <input v-model="loudspeaker" type="checkbox" class="h-5 w-5" />
+      Switch to loudspeaker (playback mode) before playing
+    </label>
+    <div class="flex flex-wrap gap-2">
+      <button class="flex-1 rounded-xl bg-amber-500 p-3 text-lg font-semibold text-white" @click="playMandarin">
+        Play Mandarin sample
+      </button>
       <button class="flex-1 rounded-xl bg-amber-500 p-3 text-lg font-semibold text-white" @click="playTone">
         Play test sound
       </button>
