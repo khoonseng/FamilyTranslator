@@ -3,8 +3,8 @@
 // - The chosen audio input, or the phone's default (hard rule 8), with or without the phone's
 //   voice processing (see micSettings.js).
 // - The VAD's model and WASM are self-hosted under /vad/ (copied there by `npm run vad-assets`).
-// - pause() / start() keep the microphone stream open: re-opening it can make iOS ask for
-//   permission again. destroy() releases it, to switch inputs or settings.
+// - pause() / start() keep the microphone stream open. destroy() releases it: the hub does that
+//   whenever Guide goes off, to switch inputs or settings, and before playing a reply.
 
 import { MicVAD } from "@ricky0123/vad-web";
 import { levelOf, micConstraints } from "./micSettings.js";

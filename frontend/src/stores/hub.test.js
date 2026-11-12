@@ -78,8 +78,8 @@ describe("hub store", () => {
     hub.listening = true;
     capture.running = true;
     hub.ready({ role: "listener", day: "2026-12-19", latest_id: 0 });
-    expect([hub.screen, hub.listening, capture.running, socket.closed]).toEqual([
-      "replaced", false, false, true,
+    expect([hub.screen, hub.listening, capture.destroyed, socket.closed]).toEqual([
+      "replaced", false, true, true,
     ]);
   });
 
@@ -96,13 +96,27 @@ describe("hub store", () => {
   });
 
   it("remote pause switches Guide off, and resume switches it back on", async () => {
+    let made;
+    setHubParts({ capture: null, makeCapture: async (o) => (made = new FakeCapture(o)) });
     await hub.setGuide(true);
+    const first = made;
     await hub.remote(true);
-    expect([hub.listening, hub.remotePaused, capture.running]).toEqual([false, true, false]);
+    expect([hub.listening, hub.remotePaused, first.destroyed]).toEqual([false, true, true]);
     await hub.remote(false);
-    expect([hub.listening, hub.remotePaused, capture.running]).toEqual([true, false, true]);
+    expect([hub.listening, hub.remotePaused, made.running]).toEqual([true, false, true]);
     const modes = socket.sent.filter((m) => m.type === "mode").map((m) => m.mode);
     expect(modes).toEqual(["guide", "off", "guide"]);
+  });
+
+  it("Guide off closes the mic completely; Guide on opens a fresh one", async () => {
+    let made;
+    setHubParts({ capture: null, makeCapture: async (o) => (made = new FakeCapture(o)) });
+    await hub.setGuide(true);
+    const first = made;
+    await hub.setGuide(false);
+    expect([first.destroyed, hub.level]).toEqual([true, 0]);
+    await hub.setGuide(true);
+    expect([made === first, made.running, hub.listening]).toEqual([false, true, true]);
   });
 
   it("tapping Guide clears the remote-pause notice", async () => {

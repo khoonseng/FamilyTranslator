@@ -690,3 +690,9 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   in green with a label, **"You"** on the asker's own phone (each phone sends an anonymous random
   id; no names) and "Family" on the others. A recording across midnight is kept and saved as
   the new day's first entry.
+- 2026-11-12 — Phase 2 step 5 device test, fixes so far (from revision 00014): replies were
+  silent from the hub with Guide off, because Guide off only paused the mic and the open
+  Bluetooth clip-on took the sound; a quick release-and-press of Talk left a hidden recording
+  running on the family phone, so every later reply had each word twice. Owner decision: the
+  hub's mic is open only while Guide is on (Guide off, a remote pause or a takeover closes it
+  completely; Guide on reopens it; iOS didn't ask for permission again in testing).

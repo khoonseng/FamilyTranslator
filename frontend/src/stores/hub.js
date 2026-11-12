@@ -17,6 +17,9 @@
 // audio/replyPlayer.js). To play, it fully stops the mic (iOS sends sound to an open Bluetooth
 // clip-on), then reopens it; a tap stops a reply. Replies are never caught up after a
 // reconnect: they were for that moment.
+//
+// The mic is open only while Guide is on: Guide off (or a remote pause, or another phone
+// taking over) closes it completely, and Guide on opens it again (owner, 12 Nov).
 
 import { defineStore } from "pinia";
 import { ClipOutput } from "../audio/clipOutput.js";
@@ -202,7 +205,7 @@ export const useHubStore = defineStore("hub", {
     replaced() {
       this.listening = false;
       this.remotePaused = false;
-      capture?.pause();
+      this.closeMic();
       socket?.close();
       this.screen = "replaced";
     },
@@ -223,7 +226,9 @@ export const useHubStore = defineStore("hub", {
         this.listening = false;
         this.replyPlayer().setListening(false);
         socket.sendJson({ type: "mode", mode: "off" });
-        await capture?.pause();
+        // Guide off closes the mic completely (owner, 12 Nov): no mic in use while not
+        // listening, and the next Guide tap opens it again (iOS didn't ask again in testing).
+        await this.closeMic();
         return;
       }
       const openId = this.micLost ? "" : this.micId;
@@ -311,6 +316,11 @@ export const useHubStore = defineStore("hub", {
     // A reply is about to play: stop the mic completely, so iOS plays on the loudspeaker.
     async releaseMicForReply() {
       replying = true;
+      await this.closeMic();
+    },
+
+    // Fully stop the mic: the browser's mic indicator goes off and the clip-on is let go.
+    async closeMic() {
       if (capture) {
         const old = capture;
         capture = null;
