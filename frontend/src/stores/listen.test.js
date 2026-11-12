@@ -274,6 +274,29 @@ describe("listener store: replies to the guide (phase 2)", () => {
     expect([mic.stopped, keeper.starts, talkPlayer.resumed]).toEqual([true, 1, 1]);
   });
 
+  it("released and pressed again while the mic opens: the first mic is stopped, sound goes once", async () => {
+    const mics = [];
+    setListenParts({
+      makeRecorder: ({ onPcm }) =>
+        new Promise((resolve) => {
+          const m = { onPcm, stopped: false, stop() { this.stopped = true; } };
+          mics.push({ m, open: () => resolve(m) });
+        }),
+    });
+    const first = listen.startTalk();
+    listen.stopTalk(); // a quick tap
+    const second = listen.startTalk(); // pressed again before the first mic opened
+    mics[0].open();
+    mics[1].open();
+    await Promise.all([first, second]);
+    expect([mics[0].m.stopped, mics[1].m.stopped, listen.talkLive]).toEqual([true, false, true]);
+    mics[0].m.onPcm(new ArrayBuffer(8)); // the old mic can never send
+    mics[1].m.onPcm(new ArrayBuffer(8));
+    expect(talkSocket.audio.length).toBe(1);
+    listen.stopTalk();
+    expect(mics[1].m.stopped).toBe(true);
+  });
+
   it("Talk waits while the guide speaks or another phone talks", async () => {
     listen.hub.guideTalking = true;
     await listen.startTalk();

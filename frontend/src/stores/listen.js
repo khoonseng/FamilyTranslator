@@ -41,6 +41,7 @@ const recent = new Map(); // sentence id -> MP3 bytes
 const refetching = new Set(); // clips asked for again for a replay
 let makeRecorder = startRecorder;
 let recorder = null; // the phone's mic while Talk is held
+let talkTurn = 0; // each press (and each release) moves it on: a late mic from an old press is stopped
 let talkTimers = [];
 let resumeLive = false; // auto-play was on before Talk: switch it back on afterwards
 
@@ -418,15 +419,24 @@ export const useListenStore = defineStore("listen", {
       player?.pause(); // the phone's own playback stops while Talk records (hard rule 13)
       keeper?.stop(); // and the keep-alive (hard rule 12)
       socket.sendJson({ type: "talk_start" });
+      // Opening the mic takes a moment. Released and pressed again meanwhile (12 Nov), the
+      // first press's mic used to be kept running unseen, and every later Talk sent each word
+      // twice. Now only the current press's mic may send, and a late one is stopped at once.
+      const turn = ++talkTurn;
       let opened;
       try {
-        opened = await makeRecorder({ onPcm: (buffer) => socket.sendAudio(buffer) });
+        opened = await makeRecorder({
+          onPcm: (buffer) => {
+            if (turn === talkTurn) socket.sendAudio(buffer);
+          },
+        });
       } catch (error) {
+        if (turn !== talkTurn) return; // an old press: the current one carries on
         this.talkError = error?.name === "NotAllowedError" ? "mic-denied" : "mic-failed";
         this.stopTalk();
         return;
       }
-      if (!this.talking) {
+      if (turn !== talkTurn || !this.talking) {
         opened.stop(); // let go before the mic was even open
         return;
       }
@@ -441,6 +451,7 @@ export const useListenStore = defineStore("listen", {
     // Release (or the cap, or a refusal): the mic is fully stopped and playback comes back.
     stopTalk({ refused = false } = {}) {
       if (!this.talking) return;
+      talkTurn++; // a mic still opening for this press is stopped when it arrives
       this.talking = false;
       this.talkLive = false;
       talkTimers.forEach((t) => (clearTimeout(t), clearInterval(t)));
