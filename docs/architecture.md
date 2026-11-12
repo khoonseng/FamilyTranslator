@@ -25,7 +25,7 @@ Only two of the seven adults speak Mandarin. The app removes the need for them t
 **Build order**
 
 - **Phase 1 (trip-critical): guide → family.** Mandarin speech, or Mandarin typed on the hub, becomes Cantonese audio and large-font Cantonese text on every listener phone. English text follows if time permits.
-- **Phase 2: family → guide.** Family members talk (push-to-talk, Cantonese or English) or type on their own phones, if those phones have the hub PIN, and the hub plays the Mandarin once the guide is quiet. The guide always has priority (see "Family replies"). It is built after Khoon Seng's Bluetooth clip-on check and before the family field test, which then covers both phases (decided 3 Nov). If it slips past the trip, Khoon Seng and his wife interpret replies, as they would anyway.
+- **Phase 2: family → guide.** Family members talk (push-to-talk, Cantonese or English) or type on their own phones, if those phones have the hub PIN, and the hub plays the Mandarin once the guide is quiet. The guide always has priority (see "Family replies"). It was built after Khoon Seng's Bluetooth clip-on check and before the family field test, which then covers both phases (decided 3 Nov), and passed its device test on 13 Nov.
 
 **Success criteria**
 
@@ -84,12 +84,12 @@ Chirp 3 returns no usable confidence score, so confidence is not part of the fil
 **Placement**
 
 - The clip-on transmitter: on the guide's collar, about 15–20 cm below the mouth, mic facing up.
-- The hub iPhone: in Khoon Seng's hand or an outer pocket, beside or slightly ahead of the guide; in the car, anywhere within Bluetooth range. Switching to another app stops capture; on return the hub shows a large "Tap to resume listening" banner (to be built in weeks 6–7), and speech in between is lost.
+- The hub iPhone: in Khoon Seng's hand or an outer pocket, beside or slightly ahead of the guide; in the car, anywhere within Bluetooth range. Switching to another app stops capture; on return the hub reopens the mic by itself or shows a large "Tap to resume listening" banner (built in weeks 6–7), and speech in between is lost.
 - Without the clip-on (battery flat, link lost): the iPhone's own mic held at chest height within about 1–2 m of the guide. It works, but Mandarin speakers nearby get through.
 
 **Hub phone rules**
 
-- **Half-duplex:** the hub pauses mic capture while it plays any audio and resumes when playback ends, so it never hears its own Mandarin output as the guide speaking. Browser echo cancellation (`echoCancellation: true`) stays on as a second layer, not as the main defence. Because the mic is muted while a reply plays, replies wait until the guide is quiet, and the guide can tap the screen to stop one (see "Family replies"). In weeks 2–3 the single-device MVP played the Cantonese on the hub itself, with an "Earphones in" switch to keep capture on; from weeks 4–5 the hub never plays Cantonese, so in phase 1 it never pauses capture. The hub's **Mic settings** (decided 3 Nov) choose the input (for a plug-in clip-on receiver) and can switch the phone's voice processing off (echo cancellation, noise suppression and auto gain). Safari ignored a DJI Mic Mini 2 receiver with the default settings, though Voice Memos recorded it clearly. Turning echo cancellation off is allowed because pausing capture during playback is the real defence against loops. A level bar and the mic's name show what the hub actually hears.
+- **Half-duplex:** the hub closes its mic completely while it plays any audio and reopens it when playback ends, so it never hears its own Mandarin output as the guide speaking. Browser echo cancellation (`echoCancellation: true`) stays on as a second layer, not as the main defence. Because the mic is closed while a reply plays, replies wait until the guide is quiet, and the guide can tap the screen to stop one (see "Family replies"). In weeks 2–3 the single-device MVP played the Cantonese on the hub itself, with an "Earphones in" switch to keep capture on; from weeks 4–5 the hub never plays Cantonese, so in phase 1 it never pauses capture. The hub's **Mic settings** (decided 3 Nov) choose the input (for a plug-in clip-on receiver) and can switch the phone's voice processing off (echo cancellation, noise suppression and auto gain). Safari ignored a DJI Mic Mini 2 receiver with the default settings, though Voice Memos recorded it clearly. Turning echo cancellation off is allowed because pausing capture during playback is the real defence against loops. A level bar and the mic's name show what the hub actually hears.
 - The only Bluetooth audio device on the hub phone is the guide's clip-on; no Bluetooth earbuds, which could take over the input or the output.
 - **The mic is open only while Guide is on** (decided 12 Nov): Guide off, a remote pause or another phone taking over closes the mic completely, so the browser's mic indicator goes off and the clip-on is let go; Guide on opens it again. iOS didn't ask for permission again when the mic reopened in testing. Before a reply plays, the hub closes the mic whether Guide is on or off, since an open Bluetooth clip-on takes all the phone's sound.
 - Bring a car charger and power bank: continuous mic, screen wake lock and roaming data drain the battery fast.
@@ -105,22 +105,23 @@ The plan until 3 Nov was "a wireless kit whose receiver plugs into USB-C or Ligh
 - **Family replies move to their own phones (phase 2):** phones with the hub PIN gain a hold-to-talk button (Cantonese or English) and a text box; the hub's Family button stays as an option (see "Family replies").
 - **The phone:** any spare iPhone or Android phone with its own eSIM or physical SIM routed through SG roaming (not Khoon Seng's hotspot). It is locked to the app with Guided Access (iOS) or App Pinning (Android), carries no personal accounts, and comes with a lanyard and a power bank.
 
-## Family replies (phase 2, decided 24 Oct)
+## Family replies (phase 2, decided 24 Oct; built and tested 5–13 Nov)
 
-Family members reply from their own phones, by talking or typing; the hub on the guide's lanyard plays the Mandarin. The guide always has priority: a family member can never cut off or block the guide's speech.
+Family members reply from their own phones, by talking or typing; the hub iPhone, carried by Khoon Seng within about 10 m of the guide, plays the Mandarin from its loudspeaker, so the guide listens hands-free. The guide always has priority: a family member can never cut off or block the guide's speech. Built in revisions 00011–00013 and tested on 12–13 Nov with a laptop and an iPad as family phones and the iPhone hub with the DJI clip-on: every check passed on revision 00016 (see "Tested 12–13 Nov" below).
 
 **Who can reply**
 
 - Only phones that have entered the hub PIN show the **Talk** button and the text box, since both trigger paid provider calls (hard rule 1). Phones without the PIN listen only.
-- In the private vehicle that is likely about 3 phones, so entering the PIN once at the start of the trip is a small cost. The phone remembers it, also after the app is closed.
-- If Khoon Seng has a spare phone of his own, he is simply one of the listeners.
+- On the family page, **🙋 Ask the guide** asks for the hub PIN once (the owner can enter it for them); the phone sends it in its hello, and the server answers whether Talk is unlocked. A wrong PIN is forgotten and the phone keeps listening. The family page never shows host controls (spend, Pause, Become hub). Host phones can reply too.
+- In the private vehicle that is likely about 3 phones (the in-laws and siblings), so entering the PIN once at the start of the trip is a small cost. The phone remembers it, also after the app is closed.
 
 **Talking: push-to-talk, after the guide pauses**
 
-- **Push-to-talk:** hold **Talk** while speaking, Cantonese or English (speech-to-text receives `yue-Hant-HK` and `en-US`). It is never an open mic, so family chatter never reaches the guide and no junk filter is needed on listener phones. A recording is capped at about 30 s.
+- **Push-to-talk:** hold **撳住講 · Hold to talk** while speaking, Cantonese or English (speech-to-text receives `yue-Hant-HK` and `en-US`), like a WhatsApp voice message. It is never an open mic, so family chatter never reaches the guide and no junk filter is needed on listener phones. A recording is capped at 30 s. The phone streams 16 kHz PCM while the button is held into one Chirp 3 stream; if the stream fails or leaves audio uncovered, the whole recording goes to `gpt-transcribe` (the same safety net as the hub). On release the mic is fully stopped. A recording that crosses midnight is kept as the new day's first entry.
+- **Only the current press records** (fixed 12 Nov): opening the mic takes a moment, and a quick release and press used to leave the first recording running unseen, so every later reply was sent twice ("what what time time"). A mic that opens after its press has ended is now stopped at once.
 - **The Talk button decides the language:** speech from it always takes the family → guide pipeline, so no language is guessed (hard rule 8).
 - **Guide priority:**
-  - The hub tells the server when the guide is speaking, from its own voice-activity detection.
+  - The hub tells the server when the guide is speaking, from its own voice-activity detection (its segment starts and ends). The server, not just the phone, refuses a Talk that starts too soon. With Guide off nothing the hub hears counts as the guide speaking.
   - While the guide speaks, listener phones show "Guide is speaking…" and Talk won't start.
   - Talk becomes available after the guide has been quiet for **2 s**, the same pause that starts a new bubble, so nobody grabs the short gap between two of the guide's sentences.
   - Once a family member has started, they can finish even if the guide starts again: the guide is captured by the hub, so nothing of his is lost. The check happens only when Talk starts.
@@ -138,16 +139,27 @@ Family members reply from their own phones, by talking or typing; the hub on the
   - **Labels:** "你 · You" on the asker's own phone, and "家人 · Family" on the others. Each phone sends an anonymous random id, so no names are involved.
   - **On the hub,** the reply's Mandarin shows large.
 
+**Translation and voice**
+
+- One LLM call per reply in the family → guide direction (prompt `backend/prompts/family_to_guide.md`), returning `zh_hans` (Mandarin, first, for the voice) and `other` (English for Cantonese speech, Cantonese for English) for the family's screens. The same failover chain as the guide's sentences: Gemini, Qwen, gpt-oss, then Cloud Translation (to `zh-CN`, source auto-detected). No Latin-letter junk check on replies: English speakers use names.
+- Voice: `cmn-CN-Chirp3-HD-Kore` (female), fallback `cmn-CN-Standard-A`; to be revisited for a more natural voice in weeks 8–10.
+- A reply is its own bubble (`kind: "reply"`), with the same sentence numbering, storage and catch-up as the guide's. It is not added to the guide's translation context.
+- The Mandarin clip goes to the hub only (and to storage); listener phones never get Mandarin audio, since there are only two audio channels. It is never caught up after a reconnect: it was for that moment.
+- Echo detection also remembers each reply's Mandarin, so the clip-on overhearing the hub can't loop.
+
 **Mandarin replies on the hub**
 
-- The Simplified Chinese text appears on the hub at once.
-- The audio is queued and plays only after the guide has been quiet for 2 s, because the hub's mic is muted while it plays (hard rule 13). Replies play in order of arrival.
-- The guide can tap the hub screen to stop a reply; the mic reopens at once.
+- The reply appears on the hub at once, on the right in green, "家人问 · Family asks", with the Mandarin large and what was said small, so Khoon Seng can also read it out.
+- The audio is queued and plays only after the guide has been quiet for 2 s by the hub's own VAD, or at once when Guide is off. Replies play in order of arrival, each after a fresh 2 s of quiet; "N waiting for the guide to pause" shows meanwhile.
+- **To play, the hub closes its mic completely, with Guide on or off** (5 Nov spike, 6 and 13 Nov fixes): while the Bluetooth clip-on is open as the mic, iOS sends all the phone's sound to it, and it has no speaker. With the mic closed, the sound comes from the iPhone's loudspeaker, clear at 1–2 m, with no audio-session switch. Afterwards the mic reopens if Guide is on. Only one mic may ever be open: a second one, opened when Guide was switched on twice quickly, kept the clip-on held and replies silent (fixed 13 Nov).
+- A large blue **🔊 播放回覆中 · Playing a reply — tap to stop** banner stops a reply; the mic reopens at once.
 
-**To test when phase 2 starts**
+**Tested 12–13 Nov (revisions 00014–00016)**
 
-- Whether iOS asks for microphone permission again in each session of a Home Screen app.
-- Whether opening the mic switches iPhone audio to call routing (quieter, through the earpiece), and whether it switches back afterwards.
+- Typed and spoken replies in Cantonese and English, translated and played from the hub's loudspeaker, with Guide on (after 2 s of quiet) and Guide off (at once).
+- Talk greyed out with "Guide is speaking…" while the guide talks, and available about 2 s after; a typed reply waits for the pause; one phone talks at a time ("Someone is asking…") while typing stays open; a tap stops a reply and the clip-on comes back; no loop from the clip-on hearing the reply; bubbles in order on every phone.
+- A family phone plays Cantonese at normal volume after using Talk (opening the mic doesn't leave iOS in a quieter call mode).
+- iOS didn't ask for microphone permission again when the hub reopened the mic in a Safari tab. If it ever does (for example after a reload, or from a Home Screen app), set Safari's **aA › Website Settings › Microphone › Allow** on both hub phones; part of the family briefing.
 
 ## System architecture
 
@@ -632,11 +644,11 @@ gantt
 4. **Weeks 6–7, trip configuration, phase 2 and field tests (reordered on 3 Nov).** The order is:
    1. Everything switches to its trip configuration: gpt-oss as a third translator, Groq's Developer plan when available, no OpenAI top-up yet, the budget alert raised, and a hub that never goes deaf without saying so.
    2. Khoon Seng checks the guide's Bluetooth clip-on alone (session 0).
-   3. Phase 2 (family → guide) is built.
+   3. Phase 2 (family → guide) is built: done 13 Nov (revision 00016), see "Family replies".
    4. One family field test covers both phases.
 
-   For the field test, the family uses their own phones in noisy places such as hawker centres and the MRT, with someone acting as the Mandarin guide and wearing the DJI clip-on, paired by Bluetooth to Khoon Seng's hub iPhone. Session 0 checks the clip-on's range, dropouts and battery (decided 3 Nov; plan in `docs/field-tests.md`). Measure time-to-first-audio on the real app (about 4.2 s in week 1, accepted) and whether it feels fast enough to the family. Let the family chat in Cantonese near the hub to check the junk filter's provisional 15%, and try replies to the guide.
-5. **Weeks 8–10 (30 Nov–18 Dec), buffer.** Fixes; sessions and History (decided 27 Oct); briefing the family on joining the room, replay and "Become hub". On 15 Dec, switch on the always-on instance.
+   For the field test, the family uses their own phones in noisy places such as hawker centres and the MRT, with someone acting as the Mandarin guide and wearing the DJI clip-on, paired by Bluetooth to Khoon Seng's hub iPhone. Session 0 (5 Nov) checked the clip-on's range (about 10 m) and dropouts; the WeChat app-switch, voice processing on vs off, an hour's battery and re-pairing on his wife's phone move to the family field test (plan in `docs/field-tests.md`, to be written). Measure time-to-first-audio on the real app (about 4.2 s in week 1, accepted) and whether it feels fast enough to the family. Let the family chat in Cantonese near the hub to check the junk filter's provisional 15%, and try replies to the guide.
+5. **Weeks 8–10 (30 Nov–18 Dec), buffer.** Fixes; sessions and History (decided 27 Oct); a nicer Mandarin voice; briefing the family on joining the room, replay, "Become hub", asking the guide, and allowing the microphone in Safari on both hub phones. On 15 Dec, switch on the always-on instance.
 6. **Trip, 19–23 Dec.** On 24 Dec, set `min-instances` back to 0.
 
 ## Open decisions

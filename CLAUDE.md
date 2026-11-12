@@ -16,8 +16,10 @@ phones play Cantonese audio with large-font text. All phones use Singapore roami
 - Phase: **Weeks 6–7 — Trip configuration and field tests** (update this line as phases
   complete; starts in plan mode). Week 1 (bake-off) closed 2026-10-25, results in
   `docs/bakeoff-results.md`; weeks 2–3 (single-device MVP) closed 2026-10-26; weeks 4–5 (rooms,
-  listener phones, replay) closed 2026-10-27, live at
-  https://chongqing-translator-408139569144.us-central1.run.app (revision 00007).
+  listener phones, replay) closed 2026-10-27. Weeks 6–7: trip configuration and session 0 done;
+  phase 2 (family → guide) built and passed its device test 2026-11-13, live at
+  https://chongqing-translator-408139569144.us-central1.run.app (revision 00016). Next: prepare
+  the family field test (`docs/field-tests.md`).
 - Trip: **19–23 Dec 2026** (5 days). Trip configuration incl. the always-on instance goes live 15 Dec.
 - Tech stack: **Python/FastAPI backend, Vue 3 frontend** — see "Stack" below
 - Primary translation model: **Gemini on Vertex AI** (bake-off winner; decided 2026-10-24,
@@ -70,8 +72,8 @@ Build order:
 - **Phase 2:** family → guide. Family members talk (push-to-talk, Cantonese or English) or type
   on their own phones (hub PIN required); the hub plays the Mandarin once the guide is quiet.
   The guide always has priority (hard rules 8 and 13). Built after the owner's Bluetooth
-  clip-on check (session 0), before the family field test, which then covers both phases
-  (owner decision 2026-11-03); if it slips, the owner and wife interpret replies.
+  clip-on check (session 0) and passed its device test on 2026-11-13; the family field test
+  covers both phases (owner decision 2026-11-03).
 
 ## Hard rules (do not break without explicit approval)
 
@@ -358,13 +360,17 @@ Dockerfile
       host controls, takeover, locked screen, catch-up, replay offline, Sound off).
 - [ ] Weeks 6–7 — Trip configuration and field tests, reordered (owner decision 2026-11-03):
       (1) trip configuration (gpt-oss, hub never deaf; done); (2) session 0, the owner's check
-      of the guide's Bluetooth clip-on (range, dropouts, battery); (3) phase 2 (family →
-      guide), starting in plan mode; (4) one family field test in noisy places covering both
-      phases: time-to-first-audio and whether it feels fast enough, the junk filter's
-      provisional 15% against family chatter, and replies to the guide.
+      of the guide's Bluetooth clip-on (range about 10 m, dropouts recovered; done 2026-11-05);
+      (3) phase 2 (family → guide; done 2026-11-13, revision 00016); (4) one family field test
+      in noisy places covering both phases: time-to-first-audio and whether it feels fast
+      enough, the junk filter's provisional 15% against family chatter, replies to the guide,
+      and session 0's leftovers (WeChat app-switch, voice processing on vs off, an hour's
+      battery, re-pairing the DJI on the wife's phone).
 - [ ] Weeks 8–10 (30 Nov–18 Dec) — Buffer, fixes, sessions and History (named sessions inside
       the one room, a History screen to revisit them within 30 days; decided 2026-10-27), family
-      briefing (incl.: the hub phone runs only the hub page). 15 Dec: `min-instances=1` on. Trip 19–23 Dec; `min-instances=0` on 24 Dec.
+      briefing (incl.: the hub phone runs only the hub page; earphones or Sound off near the
+      hub; asking the guide; Safari's microphone set to Allow on both hub phones), a nicer
+      Mandarin voice. 15 Dec: `min-instances=1` on. Trip 19–23 Dec; `min-instances=0` on 24 Dec.
 
 ## Working agreement
 
@@ -696,3 +702,14 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   running on the family phone, so every later reply had each word twice. Owner decision: the
   hub's mic is open only while Guide is on (Guide off, a remote pause or a takeover closes it
   completely; Guide on reopens it; iOS didn't ask for permission again in testing).
+- 2026-11-13 — Phase 2 passed its device test (owner; revision 00016, laptop and iPad as family
+  phones, the iPhone hub with the DJI clip-on): typed and spoken replies in Cantonese and
+  English, played from the hub's loudspeaker with Guide on (after 2 s of quiet) and off (at
+  once); Talk waits for the guide and for another phone; a typed reply waits for the pause; a
+  tap stops a reply; no loop; bubbles in order; normal volume after Talk. Also fixed: only one
+  hub mic may ever be open (switching Guide on twice quickly opened two, and the hidden one
+  kept the clip-on held, so replies were silent and family phones saw "Guide is speaking" with
+  Guide off); the server ignores the hub's speech for "guide is speaking" while Guide is off.
+  Noted, no action yet: since 12 Nov Gemini missed its 2.5 s deadline on 32 of 98 sentences
+  (31 went to Qwen, 1 to gpt-oss after a Qwen 429), so the Groq upgrade matters more. Next:
+  prepare the family field test.
