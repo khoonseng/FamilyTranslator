@@ -40,6 +40,15 @@ let activeId = ""; // the input the capture actually opened ("" = the phone's de
 let checking = false; // one check or restart at a time
 let watching = false; // the timer and listeners, set up once
 let lastReport = "";
+let micGen = 0; // moves on whenever the mic is closed: a mic opened before that is closed too
+
+async function destroyQuietly(made) {
+  try {
+    await made?.destroy();
+  } catch {
+    // already closed
+  }
+}
 let listInputs = async () => microphones(await navigator.mediaDevices.enumerateDevices());
 let replyOutput = null; // the audio element the Mandarin replies play on
 let replies = null; // the ReplyPlayer
@@ -232,11 +241,17 @@ export const useHubStore = defineStore("hub", {
         return;
       }
       const openId = this.micLost ? "" : this.micId;
+      // Opening the mic takes a moment, and Guide can be switched on twice meanwhile (a tap and
+      // the mic check) or off. Only one mic may ever be open (12 Nov: a second one kept
+      // recording with Guide off): a mic that finishes opening after it was closed, or after
+      // another one, is closed at once.
+      const gen = micGen;
+      let mine = capture;
       try {
         if (!capture) {
           // Loaded on first use: the VAD's runtime is large, and the first screens needn't wait.
           const createCapture = makeCapture ?? (await import("../audio/capture.js")).createCapture;
-          capture = await createCapture({
+          mine = await createCapture({
             send: (message) => {
               // The guide speaking, by the hub's own VAD: replies wait for 2 s of quiet.
               if (message.type === "segment_start") replies?.speechStarted();
@@ -250,14 +265,30 @@ export const useHubStore = defineStore("hub", {
             onLevel: (level) => (this.level = level),
             onTrackChange: () => this.checkMic(),
           });
-          activeId = openId;
+          if (gen !== micGen || capture) {
+            await destroyQuietly(mine); // closed meanwhile, or another call opened one first
+            if (gen !== micGen) return;
+            mine = capture;
+          } else {
+            capture = mine;
+            activeId = openId;
+          }
         }
-        await capture.start();
+        await mine.start();
+        if (gen !== micGen) {
+          await destroyQuietly(mine); // closed while it was starting: close it for good
+          return;
+        }
       } catch (error) {
+        if (gen !== micGen) {
+          await destroyQuietly(mine);
+          return;
+        }
         // The chosen mic isn't there (the clip-on off or out of range): the phone's own mic,
         // with the choice kept, so the hub switches back when the clip-on returns.
         if (error?.name === "OverconstrainedError" && openId) {
-          capture = null;
+          if (capture === mine) capture = null;
+          await destroyQuietly(mine);
           this.micLost = true;
           return this.setGuide(true);
         }
@@ -321,6 +352,7 @@ export const useHubStore = defineStore("hub", {
 
     // Fully stop the mic: the browser's mic indicator goes off and the clip-on is let go.
     async closeMic() {
+      micGen++; // a mic still opening is closed as soon as it is ready
       if (capture) {
         const old = capture;
         capture = null;
@@ -379,12 +411,7 @@ export const useHubStore = defineStore("hub", {
     },
 
     async restartCapture() {
-      if (capture) {
-        const old = capture;
-        capture = null;
-        await old.destroy();
-      }
-      activeId = "";
+      await this.closeMic();
       this.micLabel = "";
       if (this.listening) {
         this.listening = false;

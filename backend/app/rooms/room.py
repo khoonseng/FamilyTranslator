@@ -211,7 +211,8 @@ class Room:
                     self._guide_quiet_now()
                 self._broadcast(self._status())
             elif isinstance(message, SegmentStart):
-                self._guide_speaking()
+                if self.listening:  # with Guide off, nothing the hub hears is the guide
+                    self._guide_speaking()
             elif isinstance(message, SegmentEnd):
                 self._guide_paused()
             await self.pipeline.on_message(message)

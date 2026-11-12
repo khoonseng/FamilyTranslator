@@ -418,6 +418,17 @@ async def test_a_typed_reply_reaches_everyone_and_its_mandarin_only_the_hub():
         assert phone.of("clip") == [] and not any(isinstance(m, bytes) for m in phone.messages)
 
 
+async def test_with_guide_off_speech_on_the_hub_is_not_the_guide_talking():
+    room = await make_room()
+    hub, _ = join(room, "hub", host=True)
+    asker, phone = join(room, talk=True)
+    await room.handle(hub, SegmentStart(pause_s=3))  # Guide off: a stray segment
+    await settle(0.01)
+    assert room.guide_talking is False
+    await room.handle(asker, TalkStart())
+    assert asker.talking
+
+
 async def test_talk_waits_until_the_guide_has_been_quiet_then_runs_to_its_end():
     stt = FakeStt()
     room = await make_room(stt=stt)

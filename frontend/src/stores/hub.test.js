@@ -119,6 +119,27 @@ describe("hub store", () => {
     expect([made === first, made.running, hub.listening]).toEqual([false, true, true]);
   });
 
+  it("Guide switched on twice at once opens only one mic", async () => {
+    const made = [];
+    setHubParts({ capture: null, makeCapture: async (o) => made.push(new FakeCapture(o)) && made.at(-1) });
+    await Promise.all([hub.setGuide(true), hub.setGuide(true)]);
+    expect(made.map((m) => m.destroyed)).toEqual([false, true]);
+    await hub.setGuide(false);
+    expect(made.every((m) => m.destroyed)).toBe(true);
+  });
+
+  it("Guide off while the mic is still opening: it is closed as soon as it opens", async () => {
+    let open;
+    const mic = new FakeCapture();
+    setHubParts({ capture: null, makeCapture: () => new Promise((r) => (open = () => r(mic))) });
+    const on = hub.setGuide(true);
+    await new Promise((r) => setTimeout(r));
+    await hub.setGuide(false);
+    open();
+    await on;
+    expect([mic.destroyed, hub.listening]).toEqual([true, false]);
+  });
+
   it("tapping Guide clears the remote-pause notice", async () => {
     await hub.remote(true);
     await hub.toggleGuide();
