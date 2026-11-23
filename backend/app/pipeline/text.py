@@ -25,9 +25,10 @@ def spoken_chars(text: str) -> str:
     )
 
 
-def cantonese_share(text: str, chars: list[str]) -> float:
-    """Share of a sentence's characters that are Cantonese-only (哋, 唔, 喺 ...): junk-filter
-    layer 2. Mandarin narration scores 0; family chatter scores high."""
+def foreign_share(text: str, chars: list[str]) -> float:
+    """Share of a sentence's characters that only the family's language uses: junk-filter
+    layer 2. In the Chongqing profile these are Cantonese-only characters (哋, 唔, 喺 ...), so
+    Mandarin narration scores 0 and family chatter scores high."""
     spoken = spoken_chars(text)
     return sum(spoken.count(ch) for ch in chars) / len(spoken) if spoken else 0.0
 
@@ -41,8 +42,9 @@ def drop_reason(sentence: str, cfg: dict) -> str | None:
         return "filler"
     if len(spoken) < cfg["min_chars"]:
         return "short"
-    if cantonese_share(sentence, cfg["cantonese_only_chars"]) > cfg["cantonese_share"]:
-        return "cantonese"
+    share = cfg["foreign_share"]  # None: layer 2 is off for this language profile
+    if share is not None and foreign_share(sentence, cfg["foreign_chars"]) > share:
+        return cfg["foreign_label"]
     return None
 
 

@@ -121,10 +121,12 @@ tts:
     timeout_s: 8
 
 pipeline:
-  # Junk filter (hard rule 8). Layer 2: drop a sentence when Cantonese-only characters exceed
-  # this share (provisional, decided 2026-10-25; check against real family chatter).
-  cantonese_share: 0.15
-  cantonese_only_chars: [哋, 唔, 喺, 嘅, 咗, 冇, 佢, 嚟, 啲, 嘢, 嗰, 乜, 囉, 喎, 咩, 咁]
+  # Junk filter (hard rule 8). Layer 2: drop a sentence when characters only the family's
+  # language uses (here Cantonese-only) exceed this share (provisional, decided 2026-10-25;
+  # check against real family chatter). null switches layer 2 off; the label goes to the logs.
+  foreign_share: 0.15
+  foreign_chars: [哋, 唔, 喺, 嘅, 咗, 冇, 佢, 嚟, 啲, 嘢, 嗰, 乜, 囉, 喎, 咩, 咁]
+  foreign_label: cantonese
   # Layer 3: very short sentences and filler.
   min_chars: 2
   filler: [嗯, 啊, 对, 對, 哦, 呃, 那个, 這個, 这个]

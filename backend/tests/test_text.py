@@ -2,7 +2,7 @@ import pytest
 
 from app import config
 from app.pipeline.bubbles import Bubbles
-from app.pipeline.text import cantonese_share, drop_reason, split_sentences
+from app.pipeline.text import drop_reason, foreign_share, split_sentences
 
 PIPE = config.load()["pipeline"]
 
@@ -34,9 +34,13 @@ def test_junk_filter(sentence, reason):
     assert drop_reason(sentence, PIPE) == reason
 
 
-def test_cantonese_share():
-    assert cantonese_share("大家跟紧我。", PIPE["cantonese_only_chars"]) == 0
-    assert cantonese_share("佢哋喺度。", PIPE["cantonese_only_chars"]) == 0.75
+def test_foreign_share():
+    assert foreign_share("大家跟紧我。", PIPE["foreign_chars"]) == 0
+    assert foreign_share("佢哋喺度。", PIPE["foreign_chars"]) == 0.75
+
+
+def test_layer_2_can_be_switched_off():
+    assert drop_reason("我哋喺度等緊佢哋。", PIPE | {"foreign_share": None}) is None
 
 
 def test_bubble_caps_on_audio():
