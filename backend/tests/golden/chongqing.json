@@ -1,0 +1,209 @@
+{
+ "directions": {
+  "family": {
+   "latin_is_junk": false,
+   "other": "other",
+   "prompt": "family_to_guide",
+   "speech": "zh_hans"
+  },
+  "guide": {
+   "latin_is_junk": true,
+   "other": "en",
+   "prompt": "guide_to_family",
+   "speech": "yue"
+  }
+ },
+ "fallback_sources": {
+  "When do we leave?": [
+   [
+    "zh-CN",
+    ""
+   ],
+   [
+    "yue",
+    ""
+   ]
+  ],
+  "我哋幾點走？": [
+   [
+    "zh-CN",
+    ""
+   ],
+   [
+    "en",
+    ""
+   ]
+  ],
+  "洪崖洞几点开灯？": [
+   [
+    "yue",
+    "zh-CN"
+   ],
+   [
+    "en",
+    "zh-CN"
+   ]
+  ]
+ },
+ "fallback_targets": {
+  "family": {
+   "When do we leave?": [
+    "zh-CN",
+    "yue"
+   ],
+   "我哋幾點走？": [
+    "zh-CN",
+    "en"
+   ]
+  },
+  "guide": {
+   "洪崖洞几点开灯？": [
+    "yue",
+    "en"
+   ]
+  }
+ },
+ "junk": {
+  "佢哋": "cantonese",
+  "呃，这个": "filler",
+  "唔該": "cantonese",
+  "嗯。": "filler",
+  "嗯嗯啊。": "filler",
+  "大家跟紧我，不要走散了。": null,
+  "好": "short",
+  "對。": "filler",
+  "我们现在到了洪崖洞，大家可以拍照。": null,
+  "我哋喺度等緊佢哋。": "cantonese",
+  "这个地方唔，人很多，大家要注意安全，不要走散了。": null,
+  "那个。": "filler"
+ },
+ "messages": {
+  "family": [
+   {
+    "content": "You are a live interpreter on a family tour of Chongqing. A member of a Hong Kong-style\nCantonese-speaking family is asking the Mandarin-speaking tour guide something, in Cantonese or\nEnglish, spoken or typed. Translate the family member's CURRENT words only.\n\nReturn a JSON object with exactly these keys, in this order:\n{\"zh_hans\": \"...\", \"other\": \"...\"}\n\nRules for \"zh_hans\":\n- Natural spoken Mandarin in Simplified Chinese, polite and clear, as you would say it to a tour\n  guide. It will be read aloud to the guide by a Mandarin voice.\n- Use Mandarin words, not Cantonese ones: 他/她 not 佢, 是 not 係, 的 not 嘅, 在 not 喺,\n  没有 not 冇, 不 not 唔, 什么 not 咩, 这里 not 呢度, 现在 not 而家, 明天 not 聽日.\n- Keep questions as questions and requests as requests; keep it short and easy to follow when\n  heard once; do not add explanations or greetings that were not said.\n\nRules for \"other\":\n- If the family member used Cantonese: natural, plain English.\n- If the family member used English: colloquial spoken Cantonese (粵語口語) in Traditional\n  characters (佢, 係, 嘅, 喺, 冇, 唔; never formal written Chinese).\n\nThe words may come from live speech recognition, so they may contain false starts, repeated\nwords and filler (嗯, 啊, um). Say what the speaker means, cleanly, without the stumbles. Never\nchange the meaning: keep every negation, never turn an action into its opposite, and never add\nfacts the speaker did not say. Keep numbers, times and names exact, and use the glossary\nrenderings for places and dishes.\n\nGlossary (Mandarin = Cantonese = English):\n- 解放碑 = 解放碑 = Jiefangbei\n- 洪崖洞 = 洪崖洞 = Hongyadong\n- 磁器口 = 磁器口 = Ciqikou Ancient Town\n- 朝天门 = 朝天門 = Chaotianmen\n- 李子坝 = 李子壩 = Liziba Station\n- 长江索道 = 長江索道 = Yangtze River Cableway\n- 白象居 = 白象居 = Baixiangju\n- 鹅岭二厂 = 鵝嶺二廠 = Eling No. 2 Factory\n- 人民大礼堂 = 人民大禮堂 = Great Hall of the People\n- 三峡博物馆 = 三峽博物館 = Three Gorges Museum\n- 观音桥 = 觀音橋 = Guanyinqiao\n- 来福士 = 來福士 = Raffles City\n- 南山一棵树 = 南山一棵樹 = Nanshan Yikeshu Viewpoint\n- 武隆 = 武隆 = Wulong\n- 天生三桥 = 天生三橋 = Three Natural Bridges\n- 渣滓洞 = 渣滓洞 = Zhazidong\n- 白公馆 = 白公館 = Bai Mansion\n- 轻轨 = 輕軌 = light rail\n- 重庆火锅 = 重慶火鍋 = Chongqing hotpot\n- 毛血旺 = 毛血旺 = Mao Xue Wang (spicy blood and offal stew)\n- 重庆小面 = 重慶小麵 = Chongqing noodles\n- 酸辣粉 = 酸辣粉 = hot and sour glass noodles\n- 红油抄手 = 紅油抄手 = wontons in chilli oil\n- 辣子鸡 = 辣子雞 = Chongqing spicy chicken\n\nPrevious sentences from the guide, for context only (do not translate them):\n- 先去解放碑\n- 然后去洪崖洞\n",
+    "role": "system"
+   },
+   {
+    "content": "幾點集合？",
+    "role": "user"
+   }
+  ],
+  "guide": [
+   {
+    "content": "You are a live interpreter on a family tour of Chongqing. A Mandarin-speaking tour guide is\ntalking to an elderly Hong Kong-style Cantonese-speaking family. Translate the guide's CURRENT\nsentence only.\n\nReturn a JSON object with exactly these keys, in this order:\n{\"yue\": \"...\", \"en\": \"...\"}\n\nRules for \"yue\":\n- Write colloquial spoken Cantonese (粵語口語), exactly as a Hong Kong person would say it out\n  loud, in Traditional Chinese characters. It will be read aloud by a Cantonese voice.\n- Use spoken forms: 佢 not 他/她, 係 not 是, 嘅 not 的, 喺 not 在, 冇 not 沒有, 唔 not 不,\n  咗 for completed actions, 啲, 嘢, 咩, 點, 呢度, 嗰度, 而家.\n- Never write formal written Chinese (書面語) and never keep Mandarin grammar.\n- Use the Cantonese word instead of the Mandarin one, with exactly the same meaning, never\n  changing which day, time or person is meant. Change only words that Cantonese says\n  differently; words Cantonese shares with Mandarin (排隊, 拍照, 坐車, 集合) stay as they are:\n  - 天 → 日 for days: 第二天 → 第二日, 第三天 → 第三日, 每天 → 每日, 五到六天 → 五到六日,\n    今天 → 今日, 明天 → 聽日 (聽日 only where the guide said 明天);\n  - times of day: 朝早 for 早上, 晏晝 for 中午, 夜晚 or 晚黑 for 晚上, each only where the guide\n    said that time;\n  - 您, 你们 → 你 or 你哋; 他们 → 佢哋; 这样 → 咁樣; 很 → 好.\n- Never repeat a word by mistake (返返, 好好多).\n- Keep it natural and easy to follow when heard once; do not add explanations.\n\nThe guide's words come from live speech recognition, so they may contain false starts,\nrepeated words and filler (嗯, 啊, 那个). Say what the guide means, cleanly, without the\nstumbles. Never change the meaning: keep statements as statements and questions as\nquestions, keep every negation, never turn an action into its opposite, and never add facts\nthe guide did not say.\n\nRules for \"en\": natural, plain English.\n\nBoth: translate the meaning faithfully, keep numbers, times and names exact, and use the\nglossary renderings for places and dishes. The current sentence may be cut off mid-thought\nbecause the guide paused; translate what is there without inventing the rest.\n\nGlossary (Mandarin = Cantonese = English):\n- 解放碑 = 解放碑 = Jiefangbei\n- 洪崖洞 = 洪崖洞 = Hongyadong\n- 磁器口 = 磁器口 = Ciqikou Ancient Town\n- 朝天门 = 朝天門 = Chaotianmen\n- 李子坝 = 李子壩 = Liziba Station\n- 长江索道 = 長江索道 = Yangtze River Cableway\n- 白象居 = 白象居 = Baixiangju\n- 鹅岭二厂 = 鵝嶺二廠 = Eling No. 2 Factory\n- 人民大礼堂 = 人民大禮堂 = Great Hall of the People\n- 三峡博物馆 = 三峽博物館 = Three Gorges Museum\n- 观音桥 = 觀音橋 = Guanyinqiao\n- 来福士 = 來福士 = Raffles City\n- 南山一棵树 = 南山一棵樹 = Nanshan Yikeshu Viewpoint\n- 武隆 = 武隆 = Wulong\n- 天生三桥 = 天生三橋 = Three Natural Bridges\n- 渣滓洞 = 渣滓洞 = Zhazidong\n- 白公馆 = 白公館 = Bai Mansion\n- 轻轨 = 輕軌 = light rail\n- 重庆火锅 = 重慶火鍋 = Chongqing hotpot\n- 毛血旺 = 毛血旺 = Mao Xue Wang (spicy blood and offal stew)\n- 重庆小面 = 重慶小麵 = Chongqing noodles\n- 酸辣粉 = 酸辣粉 = hot and sour glass noodles\n- 红油抄手 = 紅油抄手 = wontons in chilli oil\n- 辣子鸡 = 辣子雞 = Chongqing spicy chicken\n\nPrevious sentences from the guide, for context only (do not translate them):\n- 先去解放碑\n- 然后去洪崖洞\n",
+    "role": "system"
+   },
+   {
+    "content": "到了",
+    "role": "user"
+   }
+  ],
+  "guide_no_context": [
+   {
+    "content": "You are a live interpreter on a family tour of Chongqing. A Mandarin-speaking tour guide is\ntalking to an elderly Hong Kong-style Cantonese-speaking family. Translate the guide's CURRENT\nsentence only.\n\nReturn a JSON object with exactly these keys, in this order:\n{\"yue\": \"...\", \"en\": \"...\"}\n\nRules for \"yue\":\n- Write colloquial spoken Cantonese (粵語口語), exactly as a Hong Kong person would say it out\n  loud, in Traditional Chinese characters. It will be read aloud by a Cantonese voice.\n- Use spoken forms: 佢 not 他/她, 係 not 是, 嘅 not 的, 喺 not 在, 冇 not 沒有, 唔 not 不,\n  咗 for completed actions, 啲, 嘢, 咩, 點, 呢度, 嗰度, 而家.\n- Never write formal written Chinese (書面語) and never keep Mandarin grammar.\n- Use the Cantonese word instead of the Mandarin one, with exactly the same meaning, never\n  changing which day, time or person is meant. Change only words that Cantonese says\n  differently; words Cantonese shares with Mandarin (排隊, 拍照, 坐車, 集合) stay as they are:\n  - 天 → 日 for days: 第二天 → 第二日, 第三天 → 第三日, 每天 → 每日, 五到六天 → 五到六日,\n    今天 → 今日, 明天 → 聽日 (聽日 only where the guide said 明天);\n  - times of day: 朝早 for 早上, 晏晝 for 中午, 夜晚 or 晚黑 for 晚上, each only where the guide\n    said that time;\n  - 您, 你们 → 你 or 你哋; 他们 → 佢哋; 这样 → 咁樣; 很 → 好.\n- Never repeat a word by mistake (返返, 好好多).\n- Keep it natural and easy to follow when heard once; do not add explanations.\n\nThe guide's words come from live speech recognition, so they may contain false starts,\nrepeated words and filler (嗯, 啊, 那个). Say what the guide means, cleanly, without the\nstumbles. Never change the meaning: keep statements as statements and questions as\nquestions, keep every negation, never turn an action into its opposite, and never add facts\nthe guide did not say.\n\nRules for \"en\": natural, plain English.\n\nBoth: translate the meaning faithfully, keep numbers, times and names exact, and use the\nglossary renderings for places and dishes. The current sentence may be cut off mid-thought\nbecause the guide paused; translate what is there without inventing the rest.\n\nGlossary (Mandarin = Cantonese = English):\n- 解放碑 = 解放碑 = Jiefangbei\n- 洪崖洞 = 洪崖洞 = Hongyadong\n- 磁器口 = 磁器口 = Ciqikou Ancient Town\n- 朝天门 = 朝天門 = Chaotianmen\n- 李子坝 = 李子壩 = Liziba Station\n- 长江索道 = 長江索道 = Yangtze River Cableway\n- 白象居 = 白象居 = Baixiangju\n- 鹅岭二厂 = 鵝嶺二廠 = Eling No. 2 Factory\n- 人民大礼堂 = 人民大禮堂 = Great Hall of the People\n- 三峡博物馆 = 三峽博物館 = Three Gorges Museum\n- 观音桥 = 觀音橋 = Guanyinqiao\n- 来福士 = 來福士 = Raffles City\n- 南山一棵树 = 南山一棵樹 = Nanshan Yikeshu Viewpoint\n- 武隆 = 武隆 = Wulong\n- 天生三桥 = 天生三橋 = Three Natural Bridges\n- 渣滓洞 = 渣滓洞 = Zhazidong\n- 白公馆 = 白公館 = Bai Mansion\n- 轻轨 = 輕軌 = light rail\n- 重庆火锅 = 重慶火鍋 = Chongqing hotpot\n- 毛血旺 = 毛血旺 = Mao Xue Wang (spicy blood and offal stew)\n- 重庆小面 = 重慶小麵 = Chongqing noodles\n- 酸辣粉 = 酸辣粉 = hot and sour glass noodles\n- 红油抄手 = 紅油抄手 = wontons in chilli oil\n- 辣子鸡 = 辣子雞 = Chongqing spicy chicken\n\nPrevious sentences from the guide, for context only (do not translate them):\n(none)\n",
+    "role": "system"
+   },
+   {
+    "content": "到了",
+    "role": "user"
+   }
+  ]
+ },
+ "providers": {
+  "guide_sentence_voice": {
+   "endpoint": "texttospeech.googleapis.com",
+   "language": "yue-HK",
+   "speaking_rate": 1.0,
+   "timeout_s": 8,
+   "voices": [
+    "yue-HK-Chirp3-HD-Despina",
+    "yue-HK-Standard-A"
+   ]
+  },
+  "reply_voice": {
+   "endpoint": "texttospeech.googleapis.com",
+   "language": "cmn-CN",
+   "speaking_rate": 1.0,
+   "timeout_s": 8,
+   "voices": [
+    "cmn-CN-Chirp3-HD-Kore",
+    "cmn-CN-Standard-A"
+   ]
+  },
+  "stt_phrases": [
+   "解放碑",
+   "洪崖洞",
+   "磁器口",
+   "朝天门",
+   "李子坝",
+   "长江索道",
+   "白象居",
+   "鹅岭二厂",
+   "人民大礼堂",
+   "三峡博物馆",
+   "观音桥",
+   "来福士",
+   "南山一棵树",
+   "武隆",
+   "天生三桥",
+   "渣滓洞",
+   "白公馆",
+   "轻轨",
+   "重庆火锅",
+   "毛血旺",
+   "重庆小面",
+   "酸辣粉",
+   "红油抄手",
+   "辣子鸡"
+  ],
+  "transcribe_prompt": "Places and dishes: 解放碑, 洪崖洞, 磁器口, 朝天门, 李子坝, 长江索道, 白象居, 鹅岭二厂, 人民大礼堂, 三峡博物馆, 观音桥, 来福士, 南山一棵树, 武隆, 天生三桥, 渣滓洞, 白公馆, 轻轨, 重庆火锅, 毛血旺, 重庆小面, 酸辣粉, 红油抄手, 辣子鸡",
+  "translator": {
+   "deadline_s": 2.5,
+   "models": [
+    [
+     "gemini",
+     "google/gemini-3.6-flash",
+     0.2,
+     {
+      "reasoning_effort": "minimal"
+     },
+     true
+    ],
+    [
+     "qwen",
+     "qwen/qwen3.8-27b",
+     0.2,
+     {
+      "reasoning_effort": "none"
+     },
+     false
+    ],
+    [
+     "gpt-oss",
+     "openai/gpt-oss-120b",
+     0.2,
+     {
+      "include_reasoning": false,
+      "reasoning_effort": "low"
+     },
+     false
+    ]
+   ],
+   "timeout_s": 10
+  }
+ },
+ "stt_languages": {
+  "family": [
+   "yue-Hant-HK",
+   "en-US"
+  ],
+  "guide": [
+   "cmn-Hans-CN",
+   "yue-Hant-HK"
+  ]
+ },
+ "titles": {
+  "app": "Chongqing Family Translator",
+  "docs_has_title": true
+ }
+}
