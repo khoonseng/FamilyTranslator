@@ -193,7 +193,7 @@ async def test_translation_failure_sends_the_transcript_for_the_operator():
 
 
 async def test_voice_failure_sends_no_clip_and_keeps_order():
-    session, hub = make(fake_providers(tts=FakeTts(fail={"粵:第一句。"})))
+    session, hub = make(fake_providers(family_tts=FakeTts(fail={"粵:第一句。"})))
     await session.on_message(TypedText(text="第一句。第二句。"))
     await settle()
     kinds = [m["type"] for m in hub.messages if isinstance(m, dict) and m["type"] != "english"]
@@ -201,7 +201,7 @@ async def test_voice_failure_sends_no_clip_and_keeps_order():
 
 
 async def test_each_clip_names_its_voice():
-    session, hub = make(fake_providers(tts=FakeTts(fallback={"粵:第二句。"})))
+    session, hub = make(fake_providers(family_tts=FakeTts(fallback={"粵:第二句。"})))
     await session.on_message(TypedText(text="第一句。第二句。"))
     await settle()
     assert [m["voice"] for m in hub.of("clip")] == [

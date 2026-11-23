@@ -65,7 +65,7 @@ async def main() -> None:
         print(f"{label}: {result.provider} in {result.yue_s:.2f}s, passed over {attempts}")
         print(f"  yue: {result.yue}\n  en:  {await result.en}")
 
-    tts = p.tts
+    tts = p.family_tts
     for voice in tts.voices:
         start = perf_counter()
         audio = await tts._synthesize("洪崖洞夜晚七點半之後會開燈。", voice)

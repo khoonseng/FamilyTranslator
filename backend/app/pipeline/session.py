@@ -441,7 +441,7 @@ class Pipeline:
                 "translate_s": translation.speech_s,
             }
             try:
-                speech = await (self.p.mandarin_tts if reply else self.p.tts).speak(spoken)
+                speech = await (self.p.guide_tts if reply else self.p.family_tts).speak(spoken)
                 if self.meter:
                     self.meter.tts(speech.voice, len(spoken))
                 fields |= {

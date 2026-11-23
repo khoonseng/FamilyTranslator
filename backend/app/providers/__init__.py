@@ -14,10 +14,10 @@ from app.providers.tts import GoogleTts
 @dataclass
 class Providers:
     translator: Translator
-    tts: GoogleTts  # Cantonese, for the family
+    family_tts: GoogleTts  # speaks guide sentences to the family (Chongqing: Cantonese)
     stt: GoogleStreamingStt
     transcribe: OpenAiTranscribe
-    mandarin_tts: GoogleTts  # Mandarin, for the guide (phase 2 replies)
+    guide_tts: GoogleTts  # speaks family replies to the guide (Chongqing: Mandarin; phase 2)
 
 
 def build(cfg: dict | None = None) -> Providers:
@@ -33,7 +33,8 @@ def build(cfg: dict | None = None) -> Providers:
         for name in tr["order"]
     ]
     project = config.project()
-    phrases = [term["zh"] for term in config.glossary()]
+    # STT phrase hints: the glossary column in the guide's language (Chongqing: `zh`).
+    phrases = [term[cfg["stt"]["google"]["hint_column"]] for term in config.glossary()]
     return Providers(
         translator=Translator(
             models,
@@ -41,8 +42,8 @@ def build(cfg: dict | None = None) -> Providers:
             tr["yue_deadline_s"],
             tr["timeout_s"],
         ),
-        tts=GoogleTts(cfg["tts"]["google"]),
+        family_tts=GoogleTts(cfg["tts"]["family_voice"]),
         stt=GoogleStreamingStt(cfg["stt"]["google"], project, phrases),
         transcribe=OpenAiTranscribe(cfg["stt"]["openai"], phrases),
-        mandarin_tts=GoogleTts(cfg["tts"]["google_mandarin"]),
+        guide_tts=GoogleTts(cfg["tts"]["guide_voice"]),
     )

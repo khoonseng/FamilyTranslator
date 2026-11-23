@@ -94,8 +94,8 @@ def _tts(t) -> dict:
 def _providers(p) -> dict:
     """Accessors for the provider wiring; renamed attributes are updated here, values aren't."""
     return {
-        "guide_sentence_voice": _tts(p.tts),
-        "reply_voice": _tts(p.mandarin_tts),
+        "guide_sentence_voice": _tts(p.family_tts),
+        "reply_voice": _tts(p.guide_tts),
         "stt_phrases": p.stt.phrases,
         "transcribe_prompt": p.transcribe.prompt,
         "translator": {

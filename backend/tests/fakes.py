@@ -111,17 +111,17 @@ class FakeTranscribe:
 @dataclass
 class FakeProviders:
     translator: FakeTranslator
-    tts: FakeTts
+    family_tts: FakeTts
     stt: FakeStt
     transcribe: FakeTranscribe
-    mandarin_tts: "FakeTts"
+    guide_tts: "FakeTts"
 
 
 def fake_providers(**kwargs) -> FakeProviders:
     return FakeProviders(
         kwargs.get("translator", FakeTranslator()),
-        kwargs.get("tts", FakeTts()),
+        kwargs.get("family_tts", FakeTts()),
         kwargs.get("stt", FakeStt()),
         kwargs.get("transcribe", FakeTranscribe()),
-        kwargs.get("mandarin_tts", FakeTts(voice="cmn-CN-Chirp3-HD-Kore")),
+        kwargs.get("guide_tts", FakeTts(voice="cmn-CN-Chirp3-HD-Kore")),
     )

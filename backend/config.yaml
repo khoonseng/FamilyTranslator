@@ -42,6 +42,7 @@ stt:
     model: chirp_3
     guide_languages: [cmn-Hans-CN, yue-Hant-HK]   # Guide mode (hard rule 8)
     family_languages: [yue-Hant-HK, en-US]        # Talk on a family phone (phase 2)
+    hint_column: zh               # the glossary column used as phrase hints (the guide's language)
     phrase_boost: 10              # glossary phrase biasing strength
     endpointing: standard         # "short" split words and dropped more speech in week 1
     # One stream per hub segment, closed at the segment's end (decided 2026-10-25).
@@ -102,13 +103,15 @@ translation:
     location: us-central1
 
 tts:
-  google:
+  # By role, not language: `family_voice` speaks guide sentences to the family, `guide_voice`
+  # speaks family replies to the guide (phase 2). Chongqing: Cantonese and Mandarin.
+  family_voice:
     endpoint: texttospeech.googleapis.com
     language: yue-HK
     voices: [yue-HK-Chirp3-HD-Despina, yue-HK-Standard-A]   # main, then fallback
     speaking_rate: 1.0            # never sped up (hard rule 11)
     timeout_s: 8
-  google_mandarin:
+  guide_voice:
     # Family replies to the guide (phase 2), played by the hub. Chosen for now (5 Nov); to be
     # revisited for a more natural voice once phase 2 works.
     endpoint: texttospeech.googleapis.com
