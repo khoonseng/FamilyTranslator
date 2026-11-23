@@ -1,7 +1,8 @@
 """Translation with per-sentence failover (hard rules 4 and 6): the LLMs in config order
 (Gemini, Qwen, gpt-oss), then Google Cloud Translation as the last resort.
 
-Two directions, each with its own prompt and reply fields:
+Two directions, each with its own prompt and reply fields, set per language profile in config
+(`translation.directions`; owner decision 2026-11-23). In the Chongqing profile:
 - `guide`: the guide's Mandarin → `yue` (spoken to the family), then `en`;
 - `family` (phase 2): a family member's Cantonese or English → `zh_hans` (spoken to the guide),
   then `other` (English for Cantonese, Cantonese for English).
@@ -10,8 +11,9 @@ A sentence moves to the next provider at once, never retried, when the current o
 - errors or refuses (a Vertex 429 can last for long stretches);
 - is a model with a deadline (Gemini) and its first field isn't complete within
   `yue_deadline_s`;
-- (guide direction) returns `yue` containing Latin letters: a junk word such as "goods" (run 6,
-  24 Oct). Replies skip this check: English speakers use names, which stay in Latin letters.
+- (a direction with `latin_is_junk`, the guide's) returns a spoken field containing Latin
+  letters: a junk word such as "goods" (run 6, 24 Oct). Replies skip this check: English
+  speakers use names, which stay in Latin letters.
 
 The first field is returned as soon as its closing quote streams in, so TTS can start; the
 second keeps streaming in the background (the field TTS needs comes first, architecture doc)."""
@@ -41,10 +43,13 @@ class Direction:
         return re.compile(rf'"{name}"\s*:\s*"((?:[^"\\]|\\.)*)"')
 
 
-DIRECTIONS = {
-    "guide": Direction("guide_to_family", "yue", "en", latin_is_junk=True),
-    "family": Direction("family_to_guide", "zh_hans", "other", latin_is_junk=False),
-}
+DIRECTION_NAMES = ("guide", "family")
+
+
+def direction_of(name: str) -> Direction:
+    """A direction's prompt and reply fields, from the language profile's config."""
+    d = config.load()["translation"]["directions"][name]
+    return Direction(d["prompt"], d["speech_key"], d["other_key"], bool(d["latin_is_junk"]))
 
 
 def parse_json_object(text: str) -> dict | None:
@@ -62,7 +67,7 @@ def parse_json_object(text: str) -> dict | None:
 def translation_messages(text: str, context: list[str], direction: str = "guide") -> list[dict]:
     """The direction's prompt with the glossary and the previous sentences (hard rule 7)."""
     system = (
-        config.prompt(DIRECTIONS[direction].prompt)
+        config.prompt(direction_of(direction).prompt)
         .replace("{glossary}", config.glossary_text())
         .replace("{context}", "\n".join(f"- {c}" for c in context) or "(none)")
     )
@@ -70,12 +75,19 @@ def translation_messages(text: str, context: list[str], direction: str = "guide"
 
 
 def fallback_targets(text: str, direction: str) -> tuple[str, str]:
-    """Cloud Translation's two target languages. For a reply the second one is the family's
-    other language: English if the reply is written in Chinese characters (Cantonese), else
-    Cantonese. This only picks a display language for typed or transcribed text."""
-    if direction == "guide":
-        return "yue", "en"
-    return "zh-CN", ("en" if _CJK.search(text) else "yue")
+    """Cloud Translation's two target languages (`translation.fallback` in config). For a reply
+    the second one is the family's other language: in the Chongqing profile, English if the
+    reply is written in Chinese characters (Cantonese), else Cantonese. This only picks a
+    display language for typed or transcribed text."""
+    f = config.load()["translation"]["fallback"][direction]
+    if "other" in f:
+        return f["speech"], f["other"]
+    return f["speech"], (f["other_if_cjk"] if _CJK.search(text) else f["other_else"])
+
+
+def fallback_source(direction: str) -> str:
+    """The source language Cloud Translation is told, or "" to let Google detect it."""
+    return config.load()["translation"]["fallback"][direction]["source"] or ""
 
 
 def _estimate_tokens(messages: list[dict]) -> int:
@@ -138,7 +150,7 @@ class Translator:
         self, text: str, context: list[str], direction: str = "guide"
     ) -> Translation:
         started = perf_counter()
-        way = DIRECTIONS[direction]
+        way = direction_of(direction)
         messages = translation_messages(text, context, direction)
         attempts: list[Attempt] = []
         for model in self.models:
@@ -208,7 +220,9 @@ class Translator:
         t0 = perf_counter()
         if self.meter:
             self.meter.mt(len(text) * 2)  # two calls
-        first_task, second_task = self.fallback.translate(text, fallback_targets(text, direction))
+        first_task, second_task = self.fallback.translate(
+            text, fallback_targets(text, direction), fallback_source(direction)
+        )
         try:
             speech = (await asyncio.wait_for(first_task, self.timeout_s)).strip()
             if not speech:

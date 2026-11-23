@@ -64,6 +64,16 @@ translation:
   yue_deadline_s: 2.5
   timeout_s: 10
   context_sentences: 2            # previous source sentences sent as context (hard rule 7)
+  # Each direction's prompt (under prompts/), the JSON key the voice speaks (first in the
+  # reply), the second key, and whether Latin letters in the spoken text are junk (run 6).
+  directions:
+    guide: {prompt: guide_to_family, speech_key: yue, other_key: en, latin_is_junk: true}
+    family: {prompt: family_to_guide, speech_key: zh_hans, other_key: other, latin_is_junk: false}
+  # Cloud Translation's language codes (hard rule 4); source "" lets Google detect it. A
+  # reply's second language is `other_if_cjk` when it is written in Chinese characters.
+  fallback:
+    guide: {source: zh-CN, speech: yue, other: en}
+    family: {source: "", speech: zh-CN, other_if_cjk: en, other_else: yue}
   providers:
     vertex:
       base_url: https://aiplatform.googleapis.com/v1/projects/${GCP_PROJECT}/locations/global/endpoints/openapi

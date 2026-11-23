@@ -19,7 +19,13 @@ from app import config
 from app.pipeline.text import drop_reason
 from app.providers import build
 from app.providers import mt as mt_module
-from app.providers.translator import DIRECTIONS, fallback_targets, translation_messages
+from app.providers.translator import (
+    DIRECTION_NAMES,
+    direction_of,
+    fallback_source,
+    fallback_targets,
+    translation_messages,
+)
 
 GOLDEN = Path(__file__).parent / "golden" / "chongqing.json"
 
@@ -72,7 +78,7 @@ def _fallback_sources() -> dict:
 
 def _targets_args(text: str, direction: str) -> tuple:
     """How the translator calls CloudTranslate.translate for a direction."""
-    return (fallback_targets(text, direction),)
+    return fallback_targets(text, direction), fallback_source(direction)
 
 
 def _tts(t) -> dict:
@@ -110,7 +116,7 @@ def _directions() -> dict:
             "other": d.other,
             "latin_is_junk": d.latin_is_junk,
         }
-        for name, d in DIRECTIONS.items()
+        for name, d in ((n, direction_of(n)) for n in DIRECTION_NAMES)
     }
 
 

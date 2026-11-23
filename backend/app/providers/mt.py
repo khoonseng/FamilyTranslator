@@ -1,7 +1,9 @@
 """Google Cloud Translation v3 (NMT): the last-resort translator, used only when every LLM has
-failed on a sentence (hard rule 4). Two calls, no context, literal wording: `yue` and `en` for
-the guide's Mandarin; `zh-CN` and the family's other language for a reply (phase 2), whose
-source language Google detects. Authenticates with the service account (hard rule 6)."""
+failed on a sentence (hard rule 4). Two calls, no context, literal wording. The language codes
+come from the profile (`translation.fallback`); in the Chongqing profile, `yue` and `en` from
+`zh-CN` for the guide's Mandarin, and `zh-CN` and the family's other language for a reply
+(phase 2), whose source language Google detects. Authenticates with the service account (hard
+rule 6)."""
 
 import asyncio
 
@@ -32,11 +34,10 @@ class CloudTranslate:
         return response.translations[0].translated_text
 
     def translate(
-        self, text: str, targets: tuple[str, str] = ("yue", "en")
+        self, text: str, targets: tuple[str, str], source: str = ""
     ) -> tuple[asyncio.Task, asyncio.Task]:
-        """Starts both calls at once and returns their tasks, in the order of `targets`. The
-        guide's text is Mandarin; a reply's language is left for Google to detect."""
-        source = "zh-CN" if targets == ("yue", "en") else ""
+        """Starts both calls at once and returns their tasks, in the order of `targets`. An
+        empty `source` leaves the language for Google to detect."""
         return (
             asyncio.ensure_future(self._translate(text, targets[0], source)),
             asyncio.ensure_future(self._translate(text, targets[1], source)),

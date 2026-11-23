@@ -49,9 +49,9 @@ class FakeCloudTranslate:
         self.yue, self.en, self.error = yue, en, error
         self.calls = 0
 
-    def translate(self, text, targets=("yue", "en")):
+    def translate(self, text, targets, source=""):
         self.calls += 1
-        self.targets = targets
+        self.targets, self.source = targets, source
 
         async def one(value):
             if self.error:
@@ -167,6 +167,7 @@ async def test_both_llms_fail_then_cloud_translation():
     assert (result.provider, result.speech) == ("cloud-translate", fallback.yue)
     assert await result.other == fallback.en
     assert [a.outcome for a in result.attempts] == ["429", "error"]
+    assert (fallback.targets, fallback.source) == (("yue", "en"), "zh-CN")
 
 
 async def test_everything_fails():
@@ -256,7 +257,7 @@ async def test_a_reply_falls_back_to_cloud_translation_into_mandarin():
     t = translator(FakeModel("gemini", deadline=True, error=Refused()), fallback=fallback)
     result = await t.translate("Is there a toilet nearby?", [], direction="family")
     assert (result.provider, result.speech) == ("cloud-translate", "附近有洗手间吗？")
-    assert fallback.targets == ("zh-CN", "yue")
+    assert (fallback.targets, fallback.source) == (("zh-CN", "yue"), "")  # Google detects it
 
 
 def test_fallback_targets_follow_the_direction():
