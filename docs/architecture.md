@@ -487,6 +487,45 @@ The roaming SIM, not the cloud region, is what keeps the app reachable in Chongq
 - **Changing the hub:** if the hub's battery dies or it drops off, either a host phone taps **Become hub**, or any phone opens the hub page, enters the PIN and token and taps Start. Either way the server moves the hub role to that phone, and bubble history and numbering carry on unbroken, because the pipeline belongs to the room, not to the hub's connection. The old hub is told "Another phone is now the hub" and stops listening; it offers "Listen on this phone" and "Make this phone the hub again". Become hub simply opens the hub page on the host phone and starts it. Only a deliberate Start or Become hub takes over: a hub that reconnects by itself (say the spare phone comes back from a dead zone after someone took over) never takes the role back, and shows "Another phone is now the hub" instead (decided 26 Oct). The hub plays no audio from weeks 4–5 on: listener phones play the Cantonese.
 - **Hub offline:** if the hub is unreachable for more than about 20 seconds, listener phones show a "Hub offline" banner so someone knows to take over.
 
+## Language profiles (decided 23 Nov)
+
+The same code can run a different language pair as a separate Cloud Run service. The pair is a
+deploy-time setting, `PROFILE`, never a switch inside a running service, so the trip service can't
+change languages by accident.
+
+- **`chongqing`** (the default, `chongqing-translator`): everything else in this document. A
+  Mandarin guide; a family that hears Cantonese and reads Cantonese or English.
+- **`cantonese-guide`** (`cantonese-guide-translator`): the roles swapped. A Cantonese guide; a
+  family that hears Mandarin, reads Simplified Chinese (English optional) and replies in Mandarin
+  or English; the hub plays the replies to the guide in colloquial Cantonese.
+
+How it works:
+
+- `backend/config.yaml` is the Chongqing profile. Another profile is an overlay,
+  `backend/profiles/<name>.yaml`, merged over it, holding only what differs: STT languages and
+  hint column, the two voices (by role: `family_voice`, `guide_voice`), the prompts and their JSON
+  keys, Cloud Translation's language codes, the junk filter's layer 2 and filler, the glossary
+  file, and the page's language and title.
+- The WebSocket messages, the bucket records and the phones' caches keep their field names
+  (`zh`, `yue`, `mandarin`, `en`) as role slots: `zh` is what was said, `yue` what is spoken to
+  the family, `mandarin` a reply spoken to the guide, `en` the second language. In the
+  `cantonese-guide` profile `yue` therefore holds Mandarin. Renaming them would have touched the
+  live service's records and caches.
+- One built page serves every profile. The words that change with the pair live in
+  `frontend/src/lib/profile.js`. The Chongqing service serves the built files untouched; another
+  profile's server names it in the page (`<meta name="profile">`) and sets `<html lang>`, the
+  title and the install name.
+- Each service has its own bucket (sharing one would mix the days and the join link) and shares
+  the service account and the 4 secrets, so the hub PIN and API token are the same. Both share
+  Groq's free allowance.
+- `deploy.sh` deploys the live service exactly as before with no settings, and refuses another
+  profile or bucket for it.
+
+The `cantonese-guide` profile is untested on real speech. Before it is used: a check of Chirp 3
+on a Cantonese guide with Mandarin chatter nearby (with `cmn-Hans-CN` as the second language code,
+so chatter stays Mandarin), the translation quality both ways, whether junk-filter layer 2 (off
+for now) can use a Mandarin marker, and the trip's glossary.
+
 ## Latency, rate limits and cost
 
 The target is about 2–4 seconds from end of sentence to translated audio, at a few US dollars a day; tokens never pile up because every call is stateless.

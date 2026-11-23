@@ -19,7 +19,9 @@ phones play Cantonese audio with large-font text. All phones use Singapore roami
   listener phones, replay) closed 2026-10-27. Weeks 6–7: trip configuration and session 0 done;
   phase 2 (family → guide) built and passed its device test 2026-11-13, live at
   https://chongqing-translator-408139569144.us-central1.run.app (revision 00016). Next: prepare
-  the family field test (`docs/field-tests.md`).
+  the family field test (`docs/field-tests.md`). Side track (2026-11-23): language profiles, a
+  second service `cantonese-guide-translator` with the pair swapped; code done, staging and
+  device tests pending (see "Language profiles" in the architecture doc).
 - Trip: **19–23 Dec 2026** (5 days). Trip configuration incl. the always-on instance goes live 15 Dec.
 - Tech stack: **Python/FastAPI backend, Vue 3 frontend** — see "Stack" below
 - Primary translation model: **Gemini on Vertex AI** (bake-off winner; decided 2026-10-24,
@@ -76,6 +78,12 @@ Build order:
   covers both phases (owner decision 2026-11-03).
 
 ## Hard rules (do not break without explicit approval)
+
+The rules describe the Chongqing language profile (the default, `chongqing-translator`). The
+`cantonese-guide` profile (a second service, owner decision 2026-11-23) follows them with the
+roles swapped: rule 5's colloquial Cantonese applies to the text spoken to the guide; rule 8's
+Guide-mode STT is `yue-Hant-HK` + `cmn-Hans-CN`, family speech `cmn-Hans-CN` + `en-US`, and
+junk-filter layer 2 is off until measured. Everything else applies unchanged.
 
 1. Provider API keys live server-side only (Secret Manager). Phones never call AI providers directly.
    Only a phone that has entered the hub PIN may send audio or text that triggers provider calls:
@@ -392,6 +400,9 @@ Proposed; verify and correct these when scaffolding.
 - Build image: `docker build -t chongqing-translator .`
 - Deploy: `gcloud run deploy chongqing-translator --source . --region us-central1 --cpu 1 --max-instances 1 --timeout 3600`
   (add `--min-instances 1` from 15 Dec to 23 Dec 2026 only)
+- Deploy script: `./deploy.sh` deploys the live Chongqing service as before. A second language
+  profile: `SERVICE=cantonese-guide-translator BUCKET=<project>-cg-clips PROFILE=cantonese-guide ./deploy.sh`
+  (`--bucket` once first). Local run of a profile: `PROFILE=cantonese-guide uv run uvicorn ...`
 
 Microphone access needs a secure context. `localhost` works on the laptop; testing on real
 phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
@@ -713,3 +724,14 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   Noted, no action yet: since 12 Nov Gemini missed its 2.5 s deadline on 32 of 98 sentences
   (31 went to Qwen, 1 to gpt-oss after a Qwen 429), so the Groq upgrade matters more. Next:
   prepare the family field test.
+- 2026-11-23 — Language profiles (owner decisions): the language pair is a deploy-time setting
+  (`PROFILE`), and a second Cloud Run service, `cantonese-guide-translator`, runs the pair
+  swapped: a Cantonese guide; a family that hears Mandarin, reads Simplified Chinese and replies
+  in Mandarin or English. It has its own bucket and shares the service account and secrets (same
+  hub PIN and API token). Messages, records and caches keep their field names as role slots
+  (`yue` holds the family's Mandarin there). The live service must not break: a golden test
+  pins Chongqing's prompts, languages, voices and junk filter; Chongqing serves the built page
+  byte for byte; the new code runs first on the second service with the Chongqing profile as a
+  staging copy, and the live service is redeployed only after a phone test (rollback: traffic
+  back to revision 00016). Hard rules 5 and 8 apply with the roles swapped in that profile;
+  its junk-filter layer 2 is off until measured.
