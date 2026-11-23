@@ -126,7 +126,7 @@ def _stt_languages(cfg: dict) -> dict:
 
 
 def snapshot() -> dict:
-    from app.docs import DOCS_HTML
+    from app.docs import docs_html
     from app.main import app
 
     cfg = config.load()
@@ -147,7 +147,7 @@ def snapshot() -> dict:
         "junk": {s: drop_reason(s, cfg["pipeline"]) for s in JUNK_CASES},
         "titles": {
             "app": app.title,
-            "docs_has_title": "Chongqing Family Translator" in DOCS_HTML,
+            "docs_has_title": "<title>Chongqing Family Translator: API</title>" in docs_html(),
         },
     }
 

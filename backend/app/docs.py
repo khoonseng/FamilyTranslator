@@ -4,14 +4,18 @@ The page itself is an empty shell: it asks for the token once (remembered in thi
 then fetches /openapi.json and makes every "Try it out" request with an X-API-Token header.
 The token never goes into a URL, so it never lands in Cloud Run's request logs."""
 
+import html
+
+from app import config
+
 SWAGGER_UI = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.33.1"
 
-DOCS_HTML = f"""<!doctype html>
+_DOCS_HTML = f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chongqing Family Translator: API</title>
+<title>{{title}}: API</title>
 <link rel="stylesheet" href="{SWAGGER_UI}/swagger-ui.css">
 </head>
 <body>
@@ -43,3 +47,8 @@ load();
 </body>
 </html>
 """
+
+
+def docs_html() -> str:
+    """The page, titled after the language profile."""
+    return _DOCS_HTML.replace("{title}", html.escape(config.load()["profile"]["title"]))

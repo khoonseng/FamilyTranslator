@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from app import config
-from app.docs import DOCS_HTML
+from app.docs import docs_html
 from app.logs import log
 from app.providers import Providers
 from app.providers import build as build_providers
@@ -34,7 +34,7 @@ from app.storage.store import GcsStore, MemoryStore, RoomStore
 HELLO_TIMEOUT_S = 10
 
 app = FastAPI(
-    title="Chongqing Family Translator",
+    title=config.load()["profile"]["title"],
     summary="Hub WebSocket and API. Every endpoint except /health needs the API token.",
     docs_url=None,
     redoc_url=None,
@@ -110,7 +110,7 @@ def health() -> PlainTextResponse:
 
 @app.get("/docs", include_in_schema=False)
 def docs() -> HTMLResponse:
-    return HTMLResponse(DOCS_HTML)
+    return HTMLResponse(docs_html())
 
 
 @app.get("/openapi.json", include_in_schema=False, dependencies=[Token])
