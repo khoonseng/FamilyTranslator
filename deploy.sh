@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
-# Deploys chongqing-translator to Cloud Run in us-central1 (hard rule 2).
+# Deploys a translator service to Cloud Run in us-central1 (hard rule 2). With no settings, the
+# live chongqing-translator service with the Chongqing language profile, exactly as before.
 #
 #   ./deploy.sh            build and deploy (scales to zero; see CLAUDE.md for 15-23 Dec)
 #   ./deploy.sh --secrets  create or update the 4 secrets from backend/.env (asks first)
 #   ./deploy.sh --bucket   create the clip bucket once: private, 30-day delete, no soft delete
+#
+# A second service with another language profile (owner decision 2026-11-23) has its own
+# bucket and shares the service account and the 4 secrets (same hub PIN and API token):
+#
+#   SERVICE=cantonese-guide-translator BUCKET=<project>-cg-clips PROFILE=cantonese-guide \
+#     ./deploy.sh --bucket      (once), then the same settings with ./deploy.sh
 #
 # Only the app's sources are uploaded: the files git tracks or would track under backend/ and
 # frontend/, copied to a temporary folder. .env files, node_modules, bakeoff/ recordings and
@@ -12,17 +19,41 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Read before backend/.env, so nothing in it can change which service is deployed.
+SERVICE=${SERVICE:-chongqing-translator}
+want_profile=${PROFILE:-chongqing}
+want_bucket=${BUCKET:-}
+SA_NAME=${SA_NAME:-chongqing-translator}
+
 set -a
 # shellcheck disable=SC1091
 source backend/.env
 set +a
 : "${GCP_PROJECT:?set GCP_PROJECT in backend/.env}"
 
-SERVICE=chongqing-translator
 REGION=us-central1
-ACCOUNT="$SERVICE@$GCP_PROJECT.iam.gserviceaccount.com"
-# Clips and transcripts, kept 30 days (hard rule 14 exception for our own storage).
-BUCKET="$GCP_PROJECT-cq-clips"
+PROFILE=$want_profile
+ACCOUNT="$SA_NAME@$GCP_PROJECT.iam.gserviceaccount.com"
+# Clips and transcripts, kept 30 days (hard rule 14 exception for our own storage). Each
+# service has its own: sharing one would mix their days and their join link.
+LIVE_BUCKET="$GCP_PROJECT-cq-clips"
+if [[ "$SERVICE" == chongqing-translator ]]; then
+  BUCKET=${want_bucket:-$LIVE_BUCKET}
+  if [[ "$PROFILE" != chongqing || "$BUCKET" != "$LIVE_BUCKET" ]]; then
+    echo "chongqing-translator runs only the chongqing profile on $LIVE_BUCKET" >&2
+    exit 1
+  fi
+else
+  BUCKET=$want_bucket
+  if [[ -z "$BUCKET" || "$BUCKET" == "$LIVE_BUCKET" ]]; then
+    echo "set BUCKET to $SERVICE's own bucket (not $LIVE_BUCKET)" >&2
+    exit 1
+  fi
+fi
+if [[ "$PROFILE" != chongqing && ! -f "backend/profiles/$PROFILE.yaml" ]]; then
+  echo "unknown PROFILE $PROFILE: no backend/profiles/$PROFILE.yaml" >&2
+  exit 1
+fi
 # Secret Manager name -> environment variable: the Groq and OpenAI keys, the hub PIN and the
 # API token.
 SECRETS=(groq-api-key:GROQ_API_KEY openai-api-key:OPENAI_API_KEY hub-pin:HUB_PIN
@@ -66,7 +97,7 @@ if [[ "${1:-}" == "--secrets" ]]; then
 fi
 
 if ! gcloud iam service-accounts describe "$ACCOUNT" --project "$GCP_PROJECT" >/dev/null 2>&1; then
-  gcloud iam service-accounts create "$SERVICE" --project "$GCP_PROJECT" \
+  gcloud iam service-accounts create "$SA_NAME" --project "$GCP_PROJECT" \
     --display-name "Chongqing translator (Cloud Run)"
 fi
 for role in roles/speech.client roles/aiplatform.user roles/cloudtranslate.user \
@@ -87,9 +118,10 @@ trap 'rm -rf "$stage"' EXIT
 git ls-files -z --cached --others --exclude-standard -- backend frontend Dockerfile .dockerignore \
   | tar --null -T - -cf - | tar -xf - -C "$stage"
 
+echo "deploying $SERVICE: profile $PROFILE, bucket gs://$BUCKET, account $ACCOUNT"
 # --timeout 3600: the hub's WebSocket ends at the request timeout, and the hub reconnects.
 gcloud run deploy "$SERVICE" --source "$stage" --project "$GCP_PROJECT" --region "$REGION" \
   --cpu 1 --memory 512Mi --max-instances 1 --timeout 3600 \
   --service-account "$ACCOUNT" --allow-unauthenticated --quiet \
-  --set-env-vars "GCP_PROJECT=$GCP_PROJECT,CLIP_BUCKET=$BUCKET" \
+  --set-env-vars "GCP_PROJECT=$GCP_PROJECT,CLIP_BUCKET=$BUCKET,PROFILE=$PROFILE" \
   --set-secrets "$(IFS=,; echo "${secret_flags[*]}")"
