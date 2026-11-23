@@ -18,10 +18,13 @@ phones play Cantonese audio with large-font text. All phones use Singapore roami
   `docs/bakeoff-results.md`; weeks 2–3 (single-device MVP) closed 2026-10-26; weeks 4–5 (rooms,
   listener phones, replay) closed 2026-10-27. Weeks 6–7: trip configuration and session 0 done;
   phase 2 (family → guide) built and passed its device test 2026-11-13, live at
-  https://chongqing-translator-408139569144.us-central1.run.app (revision 00016). Next: prepare
-  the family field test (`docs/field-tests.md`). Side track (2026-11-23): language profiles, a
-  second service `cantonese-guide-translator` with the pair swapped; code done, staging and
-  device tests pending (see "Language profiles" in the architecture doc).
+  https://chongqing-translator-408139569144.us-central1.run.app (revision 00017, the language
+  profiles refactor; passed staging and a live check 2026-11-23; rollback 00016-6pb). Next:
+  prepare the family field test (`docs/field-tests.md`). Side track (2026-11-23): language
+  profiles, a second service `cantonese-guide-translator`
+  (https://cantonese-guide-translator-408139569144.us-central1.run.app, bucket
+  `familytranslator-cg-clips`, revision 00002) with the pair swapped; its device test is pending (see "Language
+  profiles" in the architecture doc).
 - Trip: **19–23 Dec 2026** (5 days). Trip configuration incl. the always-on instance goes live 15 Dec.
 - Tech stack: **Python/FastAPI backend, Vue 3 frontend** — see "Stack" below
 - Primary translation model: **Gemini on Vertex AI** (bake-off winner; decided 2026-10-24,
