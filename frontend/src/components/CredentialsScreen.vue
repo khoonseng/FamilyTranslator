@@ -2,6 +2,7 @@
 // The hub PIN and API token (hard rule 1), entered once per phone and remembered. The hub page
 // and the host page share them.
 import { ref } from "vue";
+import { text } from "../lib/profile.js";
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -20,7 +21,7 @@ function save() {
 
 <template>
   <main class="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-5 bg-white p-6">
-    <h1 class="text-3xl font-bold">重慶翻譯 · {{ title }}</h1>
+    <h1 class="text-3xl font-bold">{{ text.appName }} · {{ title }}</h1>
     <p class="text-lg text-slate-600">Enter the hub PIN and the API token. This phone remembers them.</p>
     <p v-if="refused" class="rounded-lg bg-red-100 p-3 text-lg text-red-800">
       The PIN or the token was not accepted.

@@ -4,6 +4,7 @@
 // waits while the guide speaks or another phone talks, and stops itself after 30 s.
 import { computed, ref } from "vue";
 import { MAX_TALK_S, talkBlock } from "../audio/talk.js";
+import { text } from "../lib/profile.js";
 import { useListenStore } from "../stores/listen.js";
 
 const listen = useListenStore();
@@ -16,18 +17,18 @@ const block = computed(() =>
 );
 
 const holdLabel = computed(() => {
-  if (block.value === "guide") return "導遊講緊嘢… · Guide is speaking…";
-  if (block.value === "someone") return "有人問緊… · Someone is asking…";
-  if (listen.talking && !listen.talkLive) return "開緊咪… · Opening mic…";
-  if (listen.talking) return `講完放手 · Release to send · ${MAX_TALK_S - listen.talkSeconds}s`;
-  return "🎤 撳住講 · Hold to talk";
+  if (block.value === "guide") return text.talkGuideSpeaking;
+  if (block.value === "someone") return text.talkSomeoneAsking;
+  if (listen.talking && !listen.talkLive) return text.talkOpeningMic;
+  if (listen.talking) return text.talkRelease(MAX_TALK_S - listen.talkSeconds);
+  return text.talkHold;
 });
 
 const errorText = {
   "mic-denied": "Microphone refused: allow it in Settings › Safari › Microphone.",
   "mic-failed": "The microphone could not start.",
-  guide_talking: "導遊啱啱開口，等佢講完先 · The guide started talking: wait for a pause.",
-  someone_talking: "有人問緊，等一陣 · Someone else is asking: wait a moment.",
+  guide_talking: text.talkGuideStarted,
+  someone_talking: text.talkSomeoneElse,
 };
 
 function send() {
@@ -49,11 +50,11 @@ function unlock() {
         {{ errorText[listen.talkError] }}
       </p>
       <form class="flex gap-2" @submit.prevent="send">
-        <input v-model="typed" type="text" placeholder="打字問導遊 · Type to the guide"
+        <input v-model="typed" type="text" :placeholder="text.talkTypePlaceholder"
           class="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white p-3 text-lg md:text-xl" />
         <button class="rounded-xl bg-emerald-600 px-4 text-lg font-semibold text-white disabled:bg-slate-400"
           :disabled="!typed.trim() || listen.connection !== 'connected'">
-          發送 Send
+          {{ text.talkSend }}
         </button>
       </form>
       <button
@@ -72,7 +73,7 @@ function unlock() {
 
     <template v-else-if="!listen.host">
       <p v-if="listen.pinWrong" class="rounded-lg bg-amber-100 p-2 text-base text-amber-900">
-        PIN 唔啱 · That PIN wasn't accepted.
+        {{ text.talkPinWrong }}
       </p>
       <form v-if="unlocking" class="flex gap-2" @submit.prevent="unlock">
         <input v-model="pin" type="password" inputmode="numeric" autocomplete="off"
@@ -81,7 +82,7 @@ function unlock() {
       </form>
       <button v-else class="self-center rounded-full border border-slate-300 bg-white px-4 py-2 text-base text-slate-700"
         @click="unlocking = true">
-        🙋 問導遊 · Ask the guide
+        {{ text.talkAsk }}
       </button>
     </template>
   </div>

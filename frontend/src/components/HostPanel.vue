@@ -5,6 +5,7 @@
 // (hard rule 1). The spend is a warning only: translation never stops.
 import { computed, ref } from "vue";
 import { goTo } from "../lib/page.js";
+import { text } from "../lib/profile.js";
 import { useHubStore } from "../stores/hub.js";
 import { useListenStore } from "../stores/listen.js";
 
@@ -48,7 +49,7 @@ async function shareLink() {
   const url = listen.joinUrl;
   if (navigator.share) {
     try {
-      await navigator.share({ title: "重慶翻譯", text: "撳呢條連結，聽導遊講嘅廣東話：", url });
+      await navigator.share({ title: text.appName, text: text.shareText, url });
       return;
     } catch (error) {
       if (error?.name === "AbortError") return; // the share sheet was closed

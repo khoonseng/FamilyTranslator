@@ -12,12 +12,29 @@ Run locally: cd backend && uv run uvicorn app.main:app --reload --port 8000
 """
 
 import asyncio
+import html
+import json
+import re
 import secrets
 import uuid
 from functools import cache
 
-from fastapi import Depends, FastAPI, HTTPException, Security, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Security,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+)
 from fastapi.security import APIKeyHeader, APIKeyQuery
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
@@ -118,33 +135,91 @@ def openapi() -> JSONResponse:
     return JSONResponse(app.openapi())
 
 
-def _app_page() -> FileResponse:
+def _app_page() -> Response:
     """The Vue app reads these addresses itself. The join link's token never reaches the
     server here: it follows the #, and the page sends it in its WebSocket hello."""
     index = config.static_dir() / "index.html"
     if not index.is_file():
         raise HTTPException(status_code=404)
+    if config.load()["profile"]["page"]:
+        return _profile_index()
     return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
 
+# --- language profiles (owner decision 2026-11-23) ------------------------------------------
+# One built page serves every profile. The Chongqing profile serves it untouched; any other
+# profile names itself in the page (<meta name="profile">, read by src/lib/profile.js) and sets
+# <html lang>, <title> and the install name. These routes exist only for such a profile, and
+# also serve /index.html, which the service worker precaches for offline launches.
+
+
+def rewrite_index(page_html: str, profile: dict) -> str:
+    page = profile["page"]
+    page_html = re.sub(
+        r'<meta name="profile" content="[^"]*"',
+        f'<meta name="profile" content="{html.escape(profile["name"])}"',
+        page_html,
+        count=1,
+    )
+    page_html = re.sub(
+        r'<html lang="[^"]*"', f'<html lang="{html.escape(page["lang"])}"', page_html, count=1
+    )
+    return re.sub(
+        r"<title>[^<]*</title>", f"<title>{html.escape(page['title'])}</title>", page_html, count=1
+    )
+
+
+def rewrite_manifest(manifest: dict, profile: dict) -> dict:
+    page = profile["page"]
+    return manifest | {"name": page["install_name"], "lang": page["lang"]}
+
+
+def _profile_index() -> HTMLResponse:
+    index = config.static_dir() / "index.html"
+    if not index.is_file():
+        raise HTTPException(status_code=404)
+    page_html = rewrite_index(index.read_text(encoding="utf-8"), config.load()["profile"])
+    return HTMLResponse(page_html, headers={"Cache-Control": "no-cache"})
+
+
+profile_pages = APIRouter(include_in_schema=False)
+
+
+@profile_pages.get("/")
+@profile_pages.get("/index.html")
+def profile_index() -> HTMLResponse:
+    return _profile_index()
+
+
+@profile_pages.get("/manifest.webmanifest")
+def profile_manifest() -> JSONResponse:
+    path = config.static_dir() / "manifest.webmanifest"
+    if not path.is_file():
+        raise HTTPException(status_code=404)
+    manifest = rewrite_manifest(
+        json.loads(path.read_text(encoding="utf-8")), config.load()["profile"]
+    )
+    return JSONResponse(manifest, media_type="application/manifest+json")
+
+
 @app.get("/join", include_in_schema=False)
-def join_page() -> FileResponse:
+def join_page() -> Response:
     return _app_page()
 
 
 @app.get("/listen", include_in_schema=False)
-def listen_page() -> FileResponse:
+def listen_page() -> Response:
     return _app_page()
 
 
 @app.get("/host", include_in_schema=False)
-def host_page() -> FileResponse:
+def host_page() -> Response:
     """The owner's and wife's listener page; it signs in with the PIN and API token."""
     return _app_page()
 
 
 @app.get("/mictest", include_in_schema=False)
-def mic_test_page() -> FileResponse:
+def mic_test_page() -> Response:
     """Which mic Safari really captures; runs on the phone only, nothing is sent."""
     return _app_page()
 
@@ -200,6 +275,9 @@ async def room_socket(ws: WebSocket) -> None:
     finally:
         await the_room.leave(peer)
 
+
+if config.load()["profile"]["page"]:  # never for Chongqing: it serves the built files as they are
+    app.include_router(profile_pages)
 
 # Last, so the routes above take precedence. Only present once the frontend is built.
 if config.static_dir().is_dir():

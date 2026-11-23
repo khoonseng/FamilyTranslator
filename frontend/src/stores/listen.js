@@ -26,6 +26,7 @@ import { ListenerPlayer } from "../audio/listenerPlayer.js";
 import { MAX_TALK_S, startRecorder, talkBlock } from "../audio/talk.js";
 import { ClipCache } from "../lib/clipCache.js";
 import { keepScreenOn, store, stored } from "../lib/device.js";
+import { text } from "../lib/profile.js";
 import { RoomSocket } from "../lib/roomSocket.js";
 
 const RECENT_CLIPS = 50; // kept in memory too, so live clips never wait on IndexedDB
@@ -79,7 +80,7 @@ export function setListenParts(parts) {
 function holdLockScreen() {
   if (!("mediaSession" in navigator)) return;
   try {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: "重慶翻譯", artist: "廣東話 Cantonese" });
+    navigator.mediaSession.metadata = new MediaMetadata({ title: text.appName, artist: text.mediaArtist });
   } catch {
     // not supported: the lock screen just shows the page's title
   }

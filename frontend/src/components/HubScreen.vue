@@ -2,6 +2,7 @@
 // The hub: the Guide latch tints the whole screen (hard rule 8); bubbles show the Cantonese
 // large and the guide's Mandarin small, as text only (the listener phones play the audio).
 import { nextTick, ref, watch } from "vue";
+import { text } from "../lib/profile.js";
 import { useHubStore } from "../stores/hub.js";
 
 const hub = useHubStore();
@@ -50,7 +51,7 @@ const connectionLabel = {
         🔊 播放回覆中 · Playing a reply — tap to stop
       </button>
       <p v-else-if="hub.repliesWaiting" class="rounded-lg bg-sky-100 p-3 text-lg text-sky-900">
-        {{ hub.repliesWaiting }} 个回覆等导游停一停 · {{ hub.repliesWaiting }} waiting for the guide to pause
+        {{ text.hubRepliesWaiting(hub.repliesWaiting) }}
       </p>
       <!-- Never deaf without saying so (weeks 6–7 step 2). -->
       <button v-if="hub.listening && hub.needTap"
@@ -68,7 +69,7 @@ const connectionLabel = {
         :disabled="hub.connection !== 'connected' && !hub.listening"
         @click="hub.toggleGuide()"
       >
-        {{ hub.listening ? "停止 Stop" : "导游 Guide" }}
+        {{ hub.listening ? text.hubStop : text.hubGuide }}
       </button>
       <p v-if="hub.micError" class="rounded-lg bg-red-100 p-3 text-lg text-red-800">
         {{ hub.micError === "mic-denied"
@@ -106,7 +107,7 @@ const connectionLabel = {
       </details>
 
       <form class="flex gap-2" @submit.prevent="send">
-        <input v-model="typed" type="text" placeholder="输入普通话 Type Mandarin"
+        <input v-model="typed" type="text" :placeholder="text.hubTypePlaceholder"
           class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white p-3 text-lg" />
         <button class="rounded-lg bg-blue-600 px-4 text-lg font-semibold text-white disabled:bg-slate-400"
           :disabled="!typed.trim() || hub.connection !== 'connected'">
@@ -117,7 +118,7 @@ const connectionLabel = {
 
     <section ref="list" class="flex flex-col gap-3 p-4 pt-2">
       <p v-if="!hub.bubbles.length" class="py-10 text-center text-lg text-slate-500">
-        Tap Guide and speak Mandarin, or type it above.
+        {{ text.hubEmpty }}
       </p>
       <template v-for="bubble in hub.bubbles" :key="bubble.id">
       <!-- A family reply: on the right in green, the Mandarin (what the guide hears) large. -->
@@ -125,11 +126,11 @@ const connectionLabel = {
         class="ml-10 flex flex-col gap-1 self-end rounded-2xl bg-emerald-100 p-4 shadow-sm"
         :class="hub.replyPlaying === bubble.sentenceIds[0] ? 'ring-4 ring-sky-500' : ''">
         <div v-for="id in bubble.sentenceIds" :key="id" class="flex flex-col gap-1">
-          <p class="text-right text-sm font-semibold text-emerald-800">家人问 · Family asks 🙋</p>
+          <p class="text-right text-sm font-semibold text-emerald-800">{{ text.hubFamilyAsks }} 🙋</p>
           <p v-if="hub.sentences[id].status === 'ok'" class="text-3xl leading-snug text-slate-900">
             {{ hub.sentences[id].mandarin }}
           </p>
-          <p v-else class="text-xl text-amber-800">未能翻译 · Not translated: please interpret</p>
+          <p v-else class="text-xl text-amber-800">{{ text.hubReplyNotTranslated }}</p>
           <p class="text-base text-slate-600">{{ hub.sentences[id].zh }}</p>
         </div>
       </article>

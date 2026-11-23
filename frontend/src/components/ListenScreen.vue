@@ -7,6 +7,7 @@
 // Family replies to the guide (phase 2) look like WhatsApp (owner decision 2026-11-05): the
 // guide on the left in white, replies on the right in green, "You" on the asker's own phone.
 import { computed, nextTick, onMounted, watch } from "vue";
+import { text } from "../lib/profile.js";
 import { sourceLabel } from "../lib/sources.js";
 import { useListenStore } from "../stores/listen.js";
 import HostPanel from "./HostPanel.vue";
@@ -48,15 +49,15 @@ const pill = (on) =>
       <div class="mx-auto flex max-w-3xl flex-col gap-2">
         <p v-if="listen.connection !== 'connected'"
           class="rounded-lg bg-amber-200 px-3 py-2 text-xl text-amber-950 md:text-2xl">
-          重新連線中… · Reconnecting…
+          {{ text.reconnecting }}
         </p>
         <p v-else-if="!listen.hub.online"
           class="rounded-lg bg-slate-300 px-3 py-2 text-xl text-slate-900 md:text-2xl">
-          導遊手機離線 · Hub offline
+          {{ text.hubOffline }}
         </p>
         <p v-else-if="listen.hub.remotePaused"
           class="rounded-lg bg-slate-200 px-3 py-2 text-lg text-slate-800 md:text-xl">
-          暫停收聽 · Guide listening paused
+          {{ text.guidePaused }}
         </p>
 
         <HostPanel v-if="listen.host" />
@@ -65,15 +66,15 @@ const pill = (on) =>
           <button class="rounded-full border px-4 py-2 disabled:opacity-40"
             :class="pill(listen.sound && listen.player.state === 'live')" :disabled="!listen.sound"
             @click="listen.setAutoPlay(listen.player.state !== 'live')">
-            自動播放 Auto-play
+            {{ text.autoPlay }}
           </button>
           <button class="rounded-full border px-4 py-2" :class="pill(listen.english)"
             @click="listen.setEnglish(!listen.english)">
-            英文 English
+            {{ text.english }}
           </button>
           <button class="rounded-full border px-4 py-2" :class="pill(!listen.sound)"
             @click="listen.setSound(!listen.sound)">
-            靜音 Sound off
+            {{ text.soundOff }}
           </button>
         </div>
       </div>
@@ -82,7 +83,7 @@ const pill = (on) =>
     <section class="mx-auto flex max-w-3xl flex-col gap-3 p-3"
       :class="listen.canTalk ? 'pb-64' : 'pb-36'">
       <p v-if="!listen.bubbles.length" class="py-16 text-center text-2xl text-slate-500 md:text-3xl">
-        等緊導遊講嘢… · Waiting for the guide…
+        {{ text.waitingForGuide }}
       </p>
 
       <template v-for="bubble in listen.bubbles" :key="bubble.id">
@@ -92,11 +93,11 @@ const pill = (on) =>
         class="ml-10 flex flex-col gap-1 self-end rounded-2xl bg-emerald-100 p-3 shadow-sm md:ml-24 md:p-5">
         <div v-for="id in bubble.sentenceIds" :key="id" class="flex flex-col gap-1">
           <p class="text-right text-sm font-semibold text-emerald-800 md:text-base">
-            {{ listen.sentences[id].asker === listen.device ? "你 · You" : "家人 · Family" }} 🙋
+            {{ listen.sentences[id].asker === listen.device ? text.you : text.family }} 🙋
           </p>
           <p class="text-2xl leading-snug text-slate-900 md:text-4xl">{{ listen.sentences[id].zh }}</p>
           <p v-if="listen.sentences[id].status !== 'ok'" class="text-base text-amber-800 md:text-xl">
-            未能翻譯 · Not translated
+            {{ text.notTranslated }}
           </p>
           <p v-else-if="listen.sentences[id].en" class="text-lg text-slate-700 md:text-2xl">
             {{ listen.sentences[id].en }}
@@ -112,7 +113,7 @@ const pill = (on) =>
         class="mr-6 flex gap-3 rounded-2xl bg-white p-3 shadow-sm md:mr-16 md:gap-4 md:p-5"
         :class="bubble.sentenceIds.some(unplayed) ? 'ring-2 ring-blue-500' : ''">
         <button class="h-14 w-14 shrink-0 rounded-full bg-blue-100 text-2xl text-blue-800 active:bg-blue-200 disabled:opacity-30 md:h-16 md:w-16"
-          :disabled="!listen.sound" aria-label="播放 Play" @click="listen.replayBubble(bubble)">
+          :disabled="!listen.sound" :aria-label="text.play" @click="listen.replayBubble(bubble)">
           ▶
         </button>
 
@@ -133,7 +134,7 @@ const pill = (on) =>
               </p>
             </template>
             <template v-else>
-              <p class="text-xl text-amber-800 md:text-2xl">未能翻譯 · Not translated</p>
+              <p class="text-xl text-amber-800 md:text-2xl">{{ text.notTranslated }}</p>
               <p class="text-2xl md:text-3xl">{{ listen.sentences[id].zh }}</p>
             </template>
             <p v-if="listen.host && sourceLabel(listen.sentences[id]).text" class="text-sm md:text-base"
@@ -152,12 +153,12 @@ const pill = (on) =>
           <button v-if="listen.player.showJump"
             class="w-full rounded-2xl bg-amber-500 p-5 text-3xl font-bold text-white shadow-lg active:bg-amber-600"
             @click="listen.jumpToLatest()">
-            跳到最新 · Jump to latest
+            {{ text.jumpToLatest }}
           </button>
           <button v-else
             class="w-full rounded-2xl bg-blue-600 p-5 text-3xl font-bold text-white shadow-lg active:bg-blue-700"
             @click="listen.playNew()">
-            播放 {{ listen.player.waiting }} 句新嘅 · Play {{ listen.player.waiting }} new
+            {{ text.playNew(listen.player.waiting) }}
           </button>
         </template>
         <TalkBar />
@@ -167,7 +168,7 @@ const pill = (on) =>
     <div v-if="listen.audioBlocked" class="fixed inset-0 z-20 flex items-center justify-center bg-black/60 p-6">
       <button class="w-full max-w-md rounded-2xl bg-emerald-600 p-8 text-3xl font-bold text-white shadow-xl"
         @click="listen.resumeAudio()">
-        撳呢度繼續播放 · Tap to resume audio
+        {{ text.tapToResume }}
       </button>
     </div>
   </main>

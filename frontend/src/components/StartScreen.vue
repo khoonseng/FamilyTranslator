@@ -1,5 +1,6 @@
 <script setup>
 // Start makes this phone the hub: it takes over from any other hub.
+import { text } from "../lib/profile.js";
 import { useHubStore } from "../stores/hub.js";
 
 const hub = useHubStore();
@@ -7,7 +8,7 @@ const hub = useHubStore();
 
 <template>
   <main class="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 bg-white p-6">
-    <h1 class="text-3xl font-bold">重慶翻譯 · Hub</h1>
+    <h1 class="text-3xl font-bold">{{ text.appName }} · Hub</h1>
     <p class="text-lg text-slate-600">
       Start makes this phone the hub. If another phone is the hub, it stops listening.
     </p>
