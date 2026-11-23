@@ -2,6 +2,14 @@
 # (hard rule 6). ${VAR} is replaced from the environment (Cloud Run env and secrets, or
 # backend/.env locally). Values come from the week-1 bake-off: docs/bakeoff-results.md.
 
+# Language profile (owner decision 2026-11-23). This file is the Chongqing profile: a Mandarin
+# guide and a Cantonese/English family. PROFILE=<name> merges profiles/<name>.yaml over it.
+profile:
+  name: chongqing
+  title: Chongqing Family Translator  # the API docs; the phone pages keep their built title
+  glossary: glossary.yaml
+  page: null      # Chongqing serves the built page as it is; other profiles rewrite a few tags
+
 gcp:
   project: ${GCP_PROJECT}
 
