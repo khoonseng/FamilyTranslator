@@ -8,6 +8,7 @@ const page = (content) => ({
 describe("language profiles", () => {
   it("reads the profile the server named, or falls back to Chongqing", () => {
     expect(profileName(page("chongqing"))).toBe("chongqing");
+    expect(profileName(page("cantonese-guide"))).toBe("cantonese-guide");
     expect(profileName(page(null))).toBe(DEFAULT_PROFILE);
     expect(profileName(page("atlantis"))).toBe(DEFAULT_PROFILE);
     expect(profileName(undefined)).toBe(DEFAULT_PROFILE);

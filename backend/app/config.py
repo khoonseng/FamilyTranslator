@@ -75,8 +75,8 @@ def glossary() -> list[dict]:
 
 
 def glossary_text() -> str:
-    """Glossary as prompt lines: Mandarin = Cantonese = English."""
-    return "\n".join(f"- {t['zh']} = {t['yue']} = {t['en']}" for t in glossary())
+    """Glossary as prompt lines: Mandarin = Cantonese = English ("(none)" for an empty one)."""
+    return "\n".join(f"- {t['zh']} = {t['yue']} = {t['en']}" for t in glossary()) or "(none)"
 
 
 @cache

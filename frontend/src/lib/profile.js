@@ -57,7 +57,56 @@ const chongqing = {
   talkAsk: "🙋 問導遊 · Ask the guide",
 };
 
-export const PROFILES = { chongqing };
+// The roles swapped (owner decision 2026-11-23): a Cantonese-speaking guide reads Cantonese in
+// Traditional characters on the hub; the family reads Mandarin in Simplified characters.
+const cantoneseGuide = {
+  appName: "导游翻译",
+
+  hubGuide: "導遊 Guide",
+  hubStop: "停止 Stop",
+  hubRepliesWaiting: (n) => `${n} 個回覆等緊導遊停一停 · ${n} waiting for the guide to pause`,
+  hubTypePlaceholder: "輸入廣東話 Type Cantonese",
+  hubEmpty: "Tap Guide and speak Cantonese, or type it above.",
+  hubFamilyAsks: "家人問 · Family asks",
+  hubReplyNotTranslated: "未能翻譯 · Not translated: please interpret",
+
+  shareText: "点这个链接，听导游讲解（普通话）：",
+
+  mediaArtist: "普通话 Mandarin",
+  linkRevoked: "这个链接已经失效。请在家庭 WhatsApp 群里点新链接。",
+  openLink: "请在家庭 WhatsApp 群里点链接加入。",
+  earphones: "请戴上耳机，然后点「开始」。",
+  start: "开始 Start",
+  soundOffTextOnly: "静音：只显示文字 · Sound off: text only",
+  reconnecting: "正在重新连接… · Reconnecting…",
+  hubOffline: "导游手机离线 · Hub offline",
+  guidePaused: "暂停收听 · Guide listening paused",
+  autoPlay: "自动播放 Auto-play",
+  english: "英文 English",
+  soundOff: "静音 Sound off",
+  waitingForGuide: "等待导游讲话… · Waiting for the guide…",
+  you: "你 · You",
+  family: "家人 · Family",
+  notTranslated: "未能翻译 · Not translated",
+  play: "播放 Play",
+  jumpToLatest: "跳到最新 · Jump to latest",
+  playNew: (n) => `播放 ${n} 句新的 · Play ${n} new`,
+  tapToResume: "点这里继续播放 · Tap to resume audio",
+
+  talkGuideSpeaking: "导游正在讲话… · Guide is speaking…",
+  talkSomeoneAsking: "有人正在提问… · Someone is asking…",
+  talkOpeningMic: "正在打开麦克风… · Opening mic…",
+  talkRelease: (s) => `说完松手 · Release to send · ${s}s`,
+  talkHold: "🎤 按住说话 · Hold to talk",
+  talkGuideStarted: "导游刚开口，请等导游讲完 · The guide started talking: wait for a pause.",
+  talkSomeoneElse: "有人正在提问，请稍等 · Someone else is asking: wait a moment.",
+  talkTypePlaceholder: "打字问导游 · Type to the guide",
+  talkSend: "发送 Send",
+  talkPinWrong: "PIN 不对 · That PIN wasn't accepted.",
+  talkAsk: "🙋 问导游 · Ask the guide",
+};
+
+export const PROFILES = { chongqing, "cantonese-guide": cantoneseGuide };
 
 export const DEFAULT_PROFILE = "chongqing";
 

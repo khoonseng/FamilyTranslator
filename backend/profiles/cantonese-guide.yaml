@@ -1,0 +1,54 @@
+# The cantonese-guide language profile (owner decision 2026-11-23): the Chongqing roles swapped.
+# A Cantonese-speaking guide; a family that hears Mandarin, reads Simplified Chinese (English
+# optional) and replies in Mandarin or English; the guide hears colloquial Cantonese from the
+# hub. Merged over config.yaml when PROFILE=cantonese-guide (dicts merge, lists replace), so only
+# what differs is here. Not yet field-tested: see "Language profiles" in docs/architecture.md.
+
+profile:
+  name: cantonese-guide
+  title: Cantonese Guide Translator
+  glossary: glossary-cantonese-guide.yaml
+  page:
+    lang: zh-CN                 # the family reads Simplified Chinese
+    title: 导游翻译
+    install_name: Cantonese Guide Translator
+
+stt:
+  google:
+    # Mandarin as the second code, so family chatter stays Mandarin rather than being rewritten
+    # as Cantonese (Chirp 3 did the reverse with Mandarin alone, 2026-10-23). Untested.
+    guide_languages: [yue-Hant-HK, cmn-Hans-CN]
+    family_languages: [cmn-Hans-CN, en-US]
+    hint_column: yue
+
+translation:
+  directions:
+    guide:
+      prompt: cantonese-guide/guide_to_family
+      speech_key: zh_hans
+      other_key: en
+      latin_is_junk: true
+    family:
+      prompt: cantonese-guide/family_to_guide
+      speech_key: yue
+      other_key: other
+      latin_is_junk: false
+  fallback:
+    guide: {source: "", speech: zh-CN, other: en}
+    family: {source: "", speech: yue, other_if_cjk: en, other_else: zh-CN}
+
+tts:
+  family_voice:                 # guide sentences, to the family
+    language: cmn-CN
+    voices: [cmn-CN-Chirp3-HD-Kore, cmn-CN-Standard-A]
+  guide_voice:                  # family replies, played to the guide by the hub
+    language: yue-HK
+    voices: [yue-HK-Chirp3-HD-Despina, yue-HK-Standard-A]
+
+pipeline:
+  # Junk-filter layer 2 is off until measured: Mandarin has no reliable "Mandarin-only"
+  # characters the way Cantonese has 哋, 唔, 喺. The clip-on mic and echo detection remain.
+  foreign_share: null
+  foreign_chars: []
+  foreign_label: mandarin
+  filler: [嗯, 啊, 呃, 哦, 呀]
