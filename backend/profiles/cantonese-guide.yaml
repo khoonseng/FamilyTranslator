@@ -2,7 +2,7 @@
 # A Cantonese-speaking guide; a family that hears Mandarin, reads Simplified Chinese (English
 # optional) and replies in Mandarin or English; the guide hears colloquial Cantonese from the
 # hub. Merged over config.yaml when PROFILE=cantonese-guide (dicts merge, lists replace), so only
-# what differs is here. Not yet field-tested: see "Language profiles" in docs/architecture.md.
+# what differs is here. Passed a device test 2026-11-23, not yet field-tested: see "Language profiles" in docs/architecture.md.
 
 profile:
   name: cantonese-guide

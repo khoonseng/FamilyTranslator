@@ -23,8 +23,9 @@ phones play Cantonese audio with large-font text. All phones use Singapore roami
   prepare the family field test (`docs/field-tests.md`). Side track (2026-11-23): language
   profiles, a second service `cantonese-guide-translator`
   (https://cantonese-guide-translator-408139569144.us-central1.run.app, bucket
-  `familytranslator-cg-clips`, revision 00002) with the pair swapped; its device test is pending (see "Language
-  profiles" in the architecture doc).
+  `familytranslator-cg-clips`, revision 00002) with the pair swapped; passed the owner's device
+  test 2026-11-23. Open: its glossary, junk-filter layer 2, a translation-quality check (see
+  "Language profiles" in the architecture doc).
 - Trip: **19–23 Dec 2026** (5 days). Trip configuration incl. the always-on instance goes live 15 Dec.
 - Tech stack: **Python/FastAPI backend, Vue 3 frontend** — see "Stack" below
 - Primary translation model: **Gemini on Vertex AI** (bake-off winner; decided 2026-10-24,
@@ -738,3 +739,8 @@ phones needs HTTPS, so deploy a dev revision to Cloud Run for phone tests.
   staging copy, and the live service is redeployed only after a phone test (rollback: traffic
   back to revision 00016). Hard rules 5 and 8 apply with the roles swapped in that profile;
   its junk-filter layer 2 is off until measured.
+- 2026-11-23 — Language profiles deployed (owner): the live service runs the refactored code
+  as revision 00017 after a staging copy passed the phone test and a live check passed
+  (rollback: 00016-6pb). `cantonese-guide-translator` (revision 00002, bucket
+  `familytranslator-cg-clips`) passed the owner's device test. Still open for that profile:
+  its glossary, junk-filter layer 2 and a translation-quality check.

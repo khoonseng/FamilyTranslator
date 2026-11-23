@@ -521,10 +521,13 @@ How it works:
 - `deploy.sh` deploys the live service exactly as before with no settings, and refuses another
   profile or bucket for it.
 
-The `cantonese-guide` profile is untested on real speech. Before it is used: a check of Chirp 3
-on a Cantonese guide with Mandarin chatter nearby (with `cmn-Hans-CN` as the second language code,
-so chatter stays Mandarin), the translation quality both ways, whether junk-filter layer 2 (off
-for now) can use a Mandarin marker, and the trip's glossary.
+Status: both services were deployed on 23 Nov. The live Chongqing service (revision 00017)
+passed a staging copy's phone test and a live check; `cantonese-guide-translator` (revision
+00002) passed Khoon Seng's device test the same day. Still open for the `cantonese-guide`
+profile before real use: a check of Chirp 3 on a Cantonese guide with Mandarin chatter nearby
+(with `cmn-Hans-CN` as the second language code, so chatter stays Mandarin), a proper
+translation-quality check both ways (no bake-off yet), whether junk-filter layer 2 (off for now)
+can use a Mandarin marker, and the trip's glossary.
 
 ## Latency, rate limits and cost
 
