@@ -7,6 +7,9 @@ from app.rooms.room import Room
 from app.schemas import (
     ClipRequest,
     GuideControl,
+    HistoryClipRequest,
+    HistoryDaysRequest,
+    HistoryPageRequest,
     HubMic,
     LinkRequest,
     Mode,
@@ -18,7 +21,7 @@ from app.schemas import (
     TypedText,
 )
 from app.storage.store import MemoryStore, RoomStore
-from tests.fakes import FakeStt, fake_providers
+from tests.fakes import FakeStt, FakeTranslator, fake_providers
 
 
 class Phone:
@@ -327,6 +330,89 @@ async def test_a_new_day_clears_the_bubbles_and_restarts_numbering():
     await settle()
     assert hub_phone.last("day") == {"type": "day", "day": "2026-12-20"}
     assert hub_phone.last("sentence")["id"] == 1 and list(room.history) == [1]
+
+
+async def test_history_keeps_bubbles_whole_and_serves_only_listener_audio():
+    store = RoomStore(MemoryStore())
+    day = "2026-12-18"
+    for sid in range(1, 28):
+        bubble_id = 1 if sid == 27 else sid
+        kind = "reply" if sid == 2 else "guide"
+        await store.put_sentence(
+            day,
+            {
+                "id": sid,
+                "bubble_id": bubble_id,
+                "zh": str(sid),
+                "yue": "舊錄音",
+                "kind": kind,
+                "clip": "ready",
+            },
+        )
+        await store.put_clip(day, sid, f"old-{sid}".encode())
+    await store.put_json("days/2026-12-17/usage.json", {})
+    await store.put_sentence("2026-11-18", {"id": 1})  # outside the 30-day window
+
+    room = await make_room(store=store)
+    hub, _ = join(room, "hub", host=True)
+    await room.handle(hub, TypedText(text="今天第一句话。"))
+    await settle()
+    listener, phone = join(room)
+    await room.handle(listener, HistoryDaysRequest(type="history_days_request", request_id=1))
+    await room.handle(
+        listener, HistoryPageRequest(type="history_page_request", request_id=2, day=day)
+    )
+    await settle()
+    assert phone.last("history_days")["days"] == [day]
+    first = phone.last("history_page")
+    assert [s["id"] for s in first["sentences"][:3]] == [1, 27, 2]
+    assert first["sentences"][2]["clip"] == "none"
+    assert first["next_after"] == 24
+
+    await room.handle(
+        listener,
+        HistoryPageRequest(
+            type="history_page_request",
+            request_id=3,
+            day=day,
+            after=first["next_after"],
+        ),
+    )
+    for sid in (1, 2):
+        await room.handle(
+            listener,
+            HistoryClipRequest(
+                type="history_clip_request",
+                request_id=sid + 3,
+                day=day,
+                sentence_id=sid,
+            ),
+        )
+    await settle()
+    assert [s["id"] for s in phone.last("history_page")["sentences"]] == [25, 26]
+    assert phone.last("history_page")["next_after"] is None
+    audio = {m["sentence_id"]: m["bytes"] for m in phone.of("history_clip")}
+    assert audio == {1: 5, 2: 0}
+    assert b"old-1" in phone.messages and b"old-2" not in phone.messages
+    assert list(room.history) == [1]
+
+
+async def test_late_translation_and_clip_keep_their_original_day():
+    clock = {"day": "2026-12-19"}
+    translator = FakeTranslator(delays={"昨天的话。": 0.10})
+    room = await make_room(today=lambda: clock["day"], translator=translator)
+    hub, _ = join(room, "hub", host=True)
+    _, phone = join(room)
+    await room.handle(hub, TypedText(type="text", text="昨天的话。"))
+    clock["day"] = "2026-12-20"
+    await room.handle(hub, TypedText(type="text", text="今天的话。"))
+    await settle(0.20)
+
+    assert [m["zh"] for m in phone.of("sentence")] == ["今天的话。"]
+    for day, source in [("2026-12-19", "昨天的话。"), ("2026-12-20", "今天的话。")]:
+        [record] = await room.store.load_day(day)
+        assert (record["id"], record["zh"], record["en"]) == (1, source, f"en:{source}")
+        assert (await room.store.get_clip(day, 1)).decode() == f"mp3:粵:{source}"
 
 
 async def test_a_host_can_get_and_renew_the_join_link():

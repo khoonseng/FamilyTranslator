@@ -12,6 +12,16 @@ function idbBackend(db) {
     put: (store, value, key) => db.put(store, value, key),
     get: (store, key) => db.get(store, key),
     sentencesOf: (day) => db.getAll("sentences", IDBKeyRange.bound([day, 0], [day, Infinity])),
+    async sentenceDays() {
+      const days = [];
+      let cursor = await db.transaction("sentences").store.openKeyCursor();
+      while (cursor) {
+        const [day] = cursor.key;
+        days.push(day);
+        cursor = await cursor.continue([day, Infinity]);
+      }
+      return days;
+    },
   };
 }
 
@@ -22,6 +32,7 @@ export function memoryBackend() {
     put: async (store, value, key) => maps[store].set(name(key ?? [value.day, value.id]), value),
     get: async (store, key) => maps[store].get(name(key)),
     sentencesOf: async (day) => [...maps.sentences.values()].filter((s) => s.day === day),
+    sentenceDays: async () => [...new Set([...maps.sentences.values()].map((s) => s.day))],
   };
 }
 
@@ -48,6 +59,14 @@ export class ClipCache {
   async loadDay(day) {
     try {
       return (await this.backend.sentencesOf(day)).sort((a, b) => a.id - b.id);
+    } catch {
+      return [];
+    }
+  }
+
+  async listDays() {
+    try {
+      return await this.backend.sentenceDays();
     } catch {
       return [];
     }

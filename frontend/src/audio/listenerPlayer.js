@@ -89,12 +89,14 @@ export class ListenerPlayer {
     this.onChange();
   }
 
-  // A new day: the bubbles are gone, so nothing can wait or replay.
-  reset() {
-    this.#stop({ requeue: false });
-    this.state = "live";
+  // A new day clears the live queue. A replay from the History screen can carry on.
+  reset({ browsingHistory = false } = {}) {
     this.queue = [];
-    this.replayRest = [];
+    if (!browsingHistory || this.state !== "replaying") {
+      this.#stop({ requeue: false });
+      this.state = browsingHistory ? "paused" : "live";
+      this.replayRest = [];
+    }
     this.onChange();
   }
 

@@ -354,3 +354,7 @@ decision is made, add it here and update `docs/architecture.md` in the same chan
   detection); the suspected cause of the one stuck "Reconnecting…" on a locked iPhone (27 Oct):
   a WebSocket left connecting with no timeout (not yet checked); and no native iOS app, since
   there is no Mac (it would need a cloud build and the US$99 developer fee).
+- 2026-11-25 — Ship daily History first (owner decision). Listeners and hosts can open a past
+  Chongqing date and replay saved bubbles through the existing room connection, with cached
+  results available offline. Entering History pauses local live playback and leaves new live
+  clips queued for the listener. Named sessions follow as a separate step inside the same room.

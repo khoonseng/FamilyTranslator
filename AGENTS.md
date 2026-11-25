@@ -30,6 +30,8 @@ phones play Cantonese audio with large-font text. All phones use Singapore roami
   `familytranslator-cg-clips`, revision 00002) with the pair swapped; passed the owner's device
   test 2026-11-23. Open: its glossary, junk-filter layer 2, a translation-quality check (see
   "Language profiles" in the architecture doc).
+- Daily History (weeks 8–10) was approved as the first History release on 2026-11-25 and built
+  locally. Staging and the owner's iPhone check are pending. Named sessions follow separately.
 - Trip: **19–23 Dec 2026** (5 days). Trip configuration incl. the always-on instance goes live 15 Dec.
 - Tech stack: **Python/FastAPI backend, Vue 3 frontend** — see "Stack" below
 - Primary translation model: **Gemini on Vertex AI** (bake-off winner; decided 2026-10-24,

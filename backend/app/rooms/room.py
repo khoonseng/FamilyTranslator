@@ -34,6 +34,7 @@ from pydantic import BaseModel
 
 from app.logs import log
 from app.pipeline.session import Pipeline
+from app.rooms.history import HistoryArchive
 from app.schemas import (
     Clip,
     ClipRequest,
@@ -42,6 +43,10 @@ from app.schemas import (
     Error,
     GuideControl,
     GuideRemote,
+    HistoryClipRequest,
+    HistoryDaysRequest,
+    HistoryError,
+    HistoryPageRequest,
     HubMic,
     HubStatus,
     JoinLink,
@@ -63,6 +68,7 @@ from app.usage import Meter
 
 HUB_MESSAGES = (Mode, SegmentStart, SegmentEnd, TypedText)
 HOST_MESSAGES = (GuideControl, LinkRequest)
+HISTORY_MESSAGES = (HistoryDaysRequest, HistoryPageRequest, HistoryClipRequest)
 JOIN_LINK = "settings/join.json"
 SPEND_EVERY_S = 10  # how often host phones get a changed estimate, and the counts are saved
 
@@ -83,6 +89,8 @@ class Peer:
     talk: bool = False  # gave the hub PIN: may reply to the guide (phase 2)
     talking: bool = False  # holding Talk now
     device: str = ""  # the phone's random id: its own replies say "You"
+    archive_allowed: bool = True
+    archive_requests: int = 0
 
     def put(self, message: BaseModel, audio: bytes | None = None) -> None:
         self.queue.put_nowait((message.model_dump_json(), audio))
@@ -100,7 +108,6 @@ class Room:
         self.prices = cfg["spending"]
         self.meter = Meter()
         self.spend_every_s = SPEND_EVERY_S
-        self.pipeline = self._new_pipeline()
         self.peers: set[Peer] = set()
         self.hub: Peer | None = None
         self.history: OrderedDict[int, dict] = OrderedDict()  # sentence id -> record
@@ -115,6 +122,9 @@ class Room:
         self.hub_online = False
         self._offline: asyncio.Task | None = None
         self._tasks: set[asyncio.Task] = set()
+        self.archive = HistoryArchive(store, self.today)
+        self._saves: dict[tuple[str, int], asyncio.Task] = {}
+        self.pipeline = self._new_pipeline()
 
     async def start(self) -> None:
         """Loads the join link and today's sentences, so a restart carries on."""
@@ -177,7 +187,7 @@ class Room:
         self.peers.add(peer)
         peer.task = asyncio.create_task(self._sender(peer))
         if stored_clips:
-            self._spawn(self._send_stored_clips(peer, stored_clips))
+            self._spawn(self._send_stored_clips(peer, self.day, stored_clips))
         if role == "hub":
             self._set_hub(peer)
         else:
@@ -188,6 +198,7 @@ class Room:
         return peer
 
     async def leave(self, peer: Peer) -> None:
+        peer.archive_allowed = False
         self.peers.discard(peer)
         if peer.talking:  # what they said so far still goes to the guide
             self._talk_over(peer)
@@ -217,7 +228,9 @@ class Room:
                 self._guide_paused()
             await self.pipeline.on_message(message)
         elif isinstance(message, ClipRequest):
-            self._spawn(self._send_clip(peer, message.sentence_id))
+            self._spawn(self._send_clip(peer, self.day, message.sentence_id))
+        elif isinstance(message, HISTORY_MESSAGES):
+            self._request_history(peer, message)
         elif isinstance(message, (TalkStart, TalkEnd, ReplyText)):
             self._reply(peer, message)
         elif isinstance(message, HubMic):
@@ -242,6 +255,25 @@ class Room:
                 if message.new:
                     await self._new_join_link()
                 peer.put(JoinLink(token=self.join_token))
+
+    def _request_history(self, peer: Peer, message) -> None:
+        if peer.role != "listener" or not peer.archive_allowed or peer.archive_requests >= 4:
+            peer.put(HistoryError(request_id=message.request_id))
+            return
+        peer.archive_requests += 1
+        self._spawn(self._send_history(peer, message))
+
+    async def _send_history(self, peer: Peer, message) -> None:
+        try:
+            response, audio = await self.archive.response(message)
+            if peer.archive_allowed:
+                peer.put(response, audio)
+        except Exception as exc:  # noqa: BLE001 - a failed archive read must not drop the room
+            log("history_read_error", error=type(exc).__name__)
+            if peer.archive_allowed:
+                peer.put(HistoryError(request_id=message.request_id))
+        finally:
+            peer.archive_requests -= 1
 
     def on_audio(self, peer: Peer, pcm: bytes) -> None:
         if peer is self.hub:
@@ -327,6 +359,7 @@ class Room:
         removed = 0
         for peer in list(self.peers):
             if peer.role == "listener" and not peer.host:
+                peer.archive_allowed = False
                 peer.put(Error(code="link_changed"))
                 if peer.close:
                     self._spawn(self._close_after_send(peer))
@@ -390,7 +423,12 @@ class Room:
     # --- days ---------------------------------------------------------------------------------
 
     def _new_pipeline(self) -> Pipeline:
-        return Pipeline(self.providers, self.full_cfg, self._publish, conn="room")
+        day, history = self.day, self.history
+
+        async def publish(message, audio):
+            await self._publish(day, history, message, audio)
+
+        return Pipeline(self.providers, self.full_cfg, publish, conn="room")
 
     def _check_day(self) -> None:
         """At the first activity after midnight (trip-local), start a new day."""
@@ -399,10 +437,10 @@ class Room:
             return
         old = self.pipeline
         self._spawn(old.on_message(Mode(mode="off")))
-        self.day = today
-        self.history.clear()
-        self.clips.clear()
         self._spawn(self._save_usage(self._usage_name(), self.meter))
+        self.day = today
+        self.history = OrderedDict()
+        self.clips.clear()
         self.pipeline = self._new_pipeline()
         # A family member still holding Talk across midnight: their recording carries on in the
         # new day and is saved there, instead of being lost with yesterday's pipeline.
@@ -448,23 +486,33 @@ class Room:
 
     # --- sentences ----------------------------------------------------------------------------
 
-    async def _publish(self, message: BaseModel, audio: bytes | None) -> None:
+    async def _publish(self, day, history, message: BaseModel, audio: bytes | None) -> None:
         """Everything the pipeline produces: remember it, save it, send it to every phone."""
-        day = self.day
+        current = day == self.day
         if isinstance(message, Sentence):
-            self.history[message.id] = message.model_dump() | {"en": "", "clip": "pending"}
-        elif isinstance(message, Clip) and audio is not None:
+            record = message.model_dump() | {
+                "en": "",
+                "clip": "pending" if message.status == "ok" else "none",
+            }
+            history[message.id] = record
+        else:
+            record = history.get(message.sentence_id)
+            if record is None:
+                return
+            if isinstance(message, Clip):
+                record.update(clip="ready", voice=message.voice)
+            elif isinstance(message, NoClip):
+                record.update(clip="none")
+            elif isinstance(message, English):
+                record.update(en=message.en)
+        self._queue_save(day, record, audio)
+
+        if not current:
+            return  # work finishing after midnight still belongs to the previous archive
+        if isinstance(message, Clip) and audio is not None:
             self.clips[message.sentence_id] = audio
             while len(self.clips) > self.cfg["clips_in_memory"]:
                 self.clips.popitem(last=False)
-            self._set(message.sentence_id, clip="ready", voice=message.voice)
-            self._spawn(self._save(day, message.sentence_id, audio))
-        elif isinstance(message, NoClip):
-            self._set(message.sentence_id, clip="none")
-            self._spawn(self._save(day, message.sentence_id))
-        elif isinstance(message, English):
-            self._set(message.sentence_id, en=message.en)
-            self._spawn(self._save(day, message.sentence_id))
         if self._for_hub_only(message):
             if self.hub:
                 self.hub.put(message, audio)
@@ -479,19 +527,33 @@ class Room:
             return self.history.get(message.sentence_id, {}).get("kind") == "reply"
         return False
 
-    def _set(self, sentence_id: int, **fields) -> None:
-        if sentence_id in self.history:
-            self.history[sentence_id].update(fields)
+    def _queue_save(self, day: str, record: dict, mp3: bytes | None) -> None:
+        key = (day, record["id"])
+        previous = self._saves.get(key)
 
-    async def _save(self, day: str, sentence_id: int, mp3: bytes | None = None) -> None:
+        async def save():
+            try:
+                if previous is not None:
+                    await previous
+                await self._save(day, snapshot, mp3)
+            finally:
+                if self._saves.get(key) is asyncio.current_task():
+                    self._saves.pop(key)
+
+        snapshot = dict(record)
+        if snapshot["clip"] == "pending":
+            snapshot["clip"] = "none"  # this text survives even if synthesis never finishes
+        self._saves[key] = self._spawn(save())
+
+    async def _save(self, day: str, record: dict, mp3: bytes | None) -> None:
         """Writes the clip (if any), then the record. Never delays the live stream."""
         try:
             if mp3 is not None:
-                await self.store.put_clip(day, sentence_id, mp3)
-            if sentence_id in self.history:
-                await self.store.put_sentence(day, dict(self.history[sentence_id]))
+                await self.store.put_clip(day, record["id"], mp3)
+            await self.store.put_sentence(day, record)
+            self.archive.invalidate(day)
         except Exception as exc:  # noqa: BLE001 - the live stream matters more than the copy
-            log("store_error", id=sentence_id, error=type(exc).__name__)
+            log("store_error", id=record["id"], error=type(exc).__name__)
 
     def _catch_up(self, last_id: int):
         """Everything after `last_id`: all the text first, so the screen fills quickly, then
@@ -516,12 +578,14 @@ class Room:
             elif record["clip"] == "ready":
                 yield None, record["id"]
 
-    async def _send_stored_clips(self, peer: Peer, sentence_ids: list[int]) -> None:
+    async def _send_stored_clips(self, peer: Peer, day: str, sentence_ids: list[int]) -> None:
         for sentence_id in sentence_ids:
-            await self._send_clip(peer, sentence_id)
+            await self._send_clip(peer, day, sentence_id)
 
-    async def _send_clip(self, peer: Peer, sentence_id: int) -> None:
+    async def _send_clip(self, peer: Peer, day: str, sentence_id: int) -> None:
         """A clip on request: from memory, else from the bucket, else 'no clip'."""
+        if day != self.day:
+            return
         record = self.history.get(sentence_id)
         if record is None or record["clip"] == "pending":
             return  # unknown, or still being spoken: it arrives live
@@ -530,7 +594,9 @@ class Room:
             return
         audio = self.clips.get(sentence_id)
         if audio is None and record["clip"] == "ready":
-            audio = await self.store.get_clip(self.day, sentence_id)
+            audio = await self.store.get_clip(day, sentence_id)
+        if day != self.day:
+            return
         if audio is None:
             peer.put(NoClip(sentence_id=sentence_id))
         else:

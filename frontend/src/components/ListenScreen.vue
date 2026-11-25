@@ -8,22 +8,16 @@
 // guide on the left in white, replies on the right in green, "You" on the asker's own phone.
 import { computed, nextTick, onMounted, watch } from "vue";
 import { text } from "../lib/profile.js";
-import { sourceLabel } from "../lib/sources.js";
 import { useListenStore } from "../stores/listen.js";
+import ConversationBubble from "./ConversationBubble.vue";
 import HostPanel from "./HostPanel.vue";
 import TalkBar from "./TalkBar.vue";
 
 const listen = useListenStore();
 
-const isReply = (bubble) => listen.sentences[bubble.sentenceIds[0]]?.kind === "reply";
 const showPlayer = computed(
   () => listen.player.showJump || (listen.player.state !== "live" && listen.player.waiting),
 );
-
-const unplayed = (id) => {
-  const s = listen.sentences[id];
-  return listen.sound && !s.played && s.clip !== "none";
-};
 
 const atBottom = () => window.innerHeight + window.scrollY >= document.body.scrollHeight - 300;
 const toBottom = (behavior) => window.scrollTo({ top: document.body.scrollHeight, behavior });
@@ -76,6 +70,10 @@ const pill = (on) =>
             @click="listen.setSound(!listen.sound)">
             {{ text.soundOff }}
           </button>
+          <button class="rounded-full border border-slate-300 bg-white px-4 py-2 text-slate-700 disabled:opacity-40"
+            :disabled="listen.talking" @click="listen.openHistory()">
+            {{ text.history }}
+          </button>
         </div>
       </div>
     </header>
@@ -86,65 +84,10 @@ const pill = (on) =>
         {{ text.waitingForGuide }}
       </p>
 
-      <template v-for="bubble in listen.bubbles" :key="bubble.id">
-      <!-- A family reply to the guide: on the right, in green; text only (its Mandarin is for
-           the guide, played by the hub). -->
-      <article v-if="isReply(bubble)"
-        class="ml-10 flex flex-col gap-1 self-end rounded-2xl bg-emerald-100 p-3 shadow-sm md:ml-24 md:p-5">
-        <div v-for="id in bubble.sentenceIds" :key="id" class="flex flex-col gap-1">
-          <p class="text-right text-sm font-semibold text-emerald-800 md:text-base">
-            {{ listen.sentences[id].asker === listen.device ? text.you : text.family }} 🙋
-          </p>
-          <p class="text-2xl leading-snug text-slate-900 md:text-4xl">{{ listen.sentences[id].zh }}</p>
-          <p v-if="listen.sentences[id].status !== 'ok'" class="text-base text-amber-800 md:text-xl">
-            {{ text.notTranslated }}
-          </p>
-          <p v-else-if="listen.sentences[id].en" class="text-lg text-slate-700 md:text-2xl">
-            {{ listen.sentences[id].en }}
-          </p>
-          <p v-if="listen.host && sourceLabel(listen.sentences[id]).text" class="text-sm md:text-base"
-            :class="sourceLabel(listen.sentences[id]).fallback ? 'text-amber-700' : 'text-slate-400'">
-            {{ listen.sentences[id].mandarin }} · {{ sourceLabel(listen.sentences[id]).text }}
-          </p>
-        </div>
-      </article>
-
-      <article v-else
-        class="mr-6 flex gap-3 rounded-2xl bg-white p-3 shadow-sm md:mr-16 md:gap-4 md:p-5"
-        :class="bubble.sentenceIds.some(unplayed) ? 'ring-2 ring-blue-500' : ''">
-        <button class="h-14 w-14 shrink-0 rounded-full bg-blue-100 text-2xl text-blue-800 active:bg-blue-200 disabled:opacity-30 md:h-16 md:w-16"
-          :disabled="!listen.sound" :aria-label="text.play" @click="listen.replayBubble(bubble)">
-          ▶
-        </button>
-
-        <div class="flex min-w-0 flex-1 flex-col gap-3">
-          <div v-for="id in bubble.sentenceIds" :key="id" class="-m-1 rounded-lg p-1"
-            :class="listen.player.playingId === id ? 'bg-amber-100' : ''" @click="listen.replaySentence(id)">
-            <template v-if="listen.sentences[id].status === 'ok'">
-              <p class="text-3xl leading-snug md:text-5xl md:leading-tight"
-                :class="unplayed(id) ? 'text-blue-900' : 'text-slate-900'">
-                <span v-if="unplayed(id)" class="mr-2 inline-block h-3 w-3 rounded-full bg-blue-500 align-middle md:h-4 md:w-4"></span>{{ listen.sentences[id].yue }}
-              </p>
-              <p v-if="listen.english && listen.sentences[id].en" class="mt-1 text-xl text-slate-700 md:text-2xl">
-                {{ listen.sentences[id].en }}
-              </p>
-              <p class="mt-1 text-base text-slate-500 md:text-xl">
-                {{ listen.sentences[id].zh }}
-                <span v-if="listen.sound && listen.sentences[id].clip === 'pending'"> · 🔈…</span>
-              </p>
-            </template>
-            <template v-else>
-              <p class="text-xl text-amber-800 md:text-2xl">{{ text.notTranslated }}</p>
-              <p class="text-2xl md:text-3xl">{{ listen.sentences[id].zh }}</p>
-            </template>
-            <p v-if="listen.host && sourceLabel(listen.sentences[id]).text" class="text-sm md:text-base"
-              :class="sourceLabel(listen.sentences[id]).fallback ? 'text-amber-700' : 'text-slate-400'">
-              {{ sourceLabel(listen.sentences[id]).text }}
-            </p>
-          </div>
-        </div>
-      </article>
-      </template>
+      <ConversationBubble v-for="bubble in listen.bubbles" :key="bubble.id"
+        :bubble="bubble" :sentences="listen.sentences" :playing-id="listen.player.playingId"
+        :device="listen.device" :sound="listen.sound" :english="listen.english" :host="listen.host"
+        @play-bubble="listen.replayBubble" @play-sentence="listen.replaySentence" />
     </section>
 
     <footer class="fixed inset-x-0 bottom-0 bg-slate-100/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">

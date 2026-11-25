@@ -2,6 +2,7 @@
 Audio travels as binary frames: 16 kHz 16-bit mono PCM from the hub, and MP3 clips to every
 phone, each clip right after its `clip` header."""
 
+from datetime import date
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter
@@ -67,6 +68,25 @@ class ClipRequest(BaseModel):
     sentence_id: int
 
 
+class HistoryDaysRequest(BaseModel):
+    type: Literal["history_days_request"]
+    request_id: int
+
+
+class HistoryPageRequest(BaseModel):
+    type: Literal["history_page_request"]
+    request_id: int
+    day: date
+    after: int = Field(default=0, ge=0)
+
+
+class HistoryClipRequest(BaseModel):
+    type: Literal["history_clip_request"]
+    request_id: int
+    day: date
+    sentence_id: int = Field(gt=0)
+
+
 class GuideControl(BaseModel):
     """Host listeners only: pause or resume the hub's Guide listening (remote pause)."""
 
@@ -119,6 +139,9 @@ PhoneMessage = Annotated[
     | SegmentEnd
     | TypedText
     | ClipRequest
+    | HistoryDaysRequest
+    | HistoryPageRequest
+    | HistoryClipRequest
     | GuideControl
     | LinkRequest
     | HubMic
@@ -261,3 +284,35 @@ class English(BaseModel):
     type: Literal["english"] = "english"
     sentence_id: int
     en: str
+
+
+class HistoryDays(BaseModel):
+    type: Literal["history_days"] = "history_days"
+    request_id: int
+    days: list[str]
+
+
+class HistorySentence(Sentence):
+    en: str = ""
+    clip: Literal["ready", "none"] = "none"
+
+
+class HistoryPage(BaseModel):
+    type: Literal["history_page"] = "history_page"
+    request_id: int
+    day: date
+    sentences: list[HistorySentence]
+    next_after: int | None = None
+
+
+class HistoryClip(BaseModel):
+    type: Literal["history_clip"] = "history_clip"
+    request_id: int
+    day: date
+    sentence_id: int
+    bytes: int
+
+
+class HistoryError(BaseModel):
+    type: Literal["history_error"] = "history_error"
+    request_id: int

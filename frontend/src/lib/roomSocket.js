@@ -27,6 +27,7 @@ export class RoomSocket {
     this.onStatus("connecting");
     ws.onopen = () => ws.send(JSON.stringify({ type: "hello", ...this.hello() }));
     ws.onmessage = (event) => {
+      if (this.ws !== ws) return;
       if (typeof event.data !== "string") {
         const header = this.pendingClip;
         if (header !== null) this.onClip(header.sentence_id, event.data, header);
@@ -41,7 +42,7 @@ export class RoomSocket {
       } else if (message.type === "error" && REFUSALS.includes(message.code)) {
         this.stopped = true;
         this.onRefused(message.code);
-      } else if (message.type === "clip") {
+      } else if (message.type === "clip" || (message.type === "history_clip" && message.bytes)) {
         this.pendingClip = message; // its MP3 is the next binary frame
       } else {
         this.onMessage(message);

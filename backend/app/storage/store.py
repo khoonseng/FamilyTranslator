@@ -11,10 +11,13 @@ The bucket deletes `days/` objects after 30 days (hard rule 14's exception for o
 storage); `settings/` never expires, so the join link outlives the rule. Without a bucket
 (tests, local runs) everything lives in memory."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 
 from google.cloud import storage
+from google.cloud.exceptions import NotFound
 
 
 class MemoryStore:
@@ -27,8 +30,22 @@ class MemoryStore:
     async def get(self, name: str) -> bytes | None:
         return self.objects.get(name)
 
+    read = get
+
     async def list(self, prefix: str) -> list[str]:
         return sorted(name for name in self.objects if name.startswith(prefix))
+
+    async def folders(self, prefix: str) -> list[str]:
+        return sorted(
+            {
+                f"{prefix}{name[len(prefix) :].split('/', 1)[0]}/"
+                for name in self.objects
+                if name.startswith(prefix) and "/" in name[len(prefix) :]
+            }
+        )
+
+    async def has_objects(self, prefix: str) -> bool:
+        return any(name.startswith(prefix) for name in self.objects)
 
 
 class GcsStore:
@@ -40,15 +57,37 @@ class GcsStore:
         await asyncio.to_thread(blob.upload_from_string, data, content_type=content_type)
 
     async def get(self, name: str) -> bytes | None:
+        try:
+            return await self.read(name)
+        except Exception:  # noqa: BLE001 - missing or unreadable: the caller copes
+            return None
+
+    async def read(self, name: str) -> bytes | None:
         blob = self._bucket.blob(name)
         try:
             return await asyncio.to_thread(blob.download_as_bytes)
-        except Exception:  # noqa: BLE001 - missing or unreadable: the caller copes
+        except NotFound:
             return None
 
     async def list(self, prefix: str) -> list[str]:
         blobs = await asyncio.to_thread(lambda: list(self._bucket.list_blobs(prefix=prefix)))
         return sorted(blob.name for blob in blobs)
+
+    async def folders(self, prefix: str) -> list[str]:
+        def list_prefixes() -> list[str]:
+            blobs = self._bucket.list_blobs(prefix=prefix, delimiter="/")
+            for _ in blobs.pages:
+                pass  # prefixes are populated as pages arrive
+            return sorted(blobs.prefixes)
+
+        return await asyncio.to_thread(list_prefixes)
+
+    async def has_objects(self, prefix: str) -> bool:
+        def any_blob() -> bool:
+            blobs = self._bucket.list_blobs(prefix=prefix, max_results=1)
+            return next(iter(blobs), None) is not None
+
+        return await asyncio.to_thread(any_blob)
 
 
 class RoomStore:
@@ -67,6 +106,35 @@ class RoomStore:
 
     async def get_clip(self, day: str, sentence_id: int) -> bytes | None:
         return await self.backend.get(f"days/{day}/clips/{sentence_id:05d}.mp3")
+
+    async def read_history_clip(self, day: str, sentence_id: int) -> bytes | None:
+        record = await self.backend.read(f"days/{day}/sentences/{sentence_id:05d}.json")
+        if record is None:
+            return None
+        sentence = json.loads(record)
+        if sentence.get("clip") != "ready" or sentence.get("kind") == "reply":
+            return None
+        return await self.backend.read(f"days/{day}/clips/{sentence_id:05d}.mp3")
+
+    async def history_dates(self, first: str, today: str) -> list[str]:
+        candidates = [
+            folder.removeprefix("days/").removesuffix("/")
+            for folder in await self.backend.folders("days/")
+        ]
+        days = sorted((day for day in candidates if first <= day < today), reverse=True)
+        exists = await asyncio.gather(
+            *(self.backend.has_objects(f"days/{day}/sentences/") for day in days)
+        )
+        return [day for day, present in zip(days, exists, strict=True) if present]
+
+    async def read_history_day(self, day: str) -> list[dict]:
+        names = await self.backend.list(f"days/{day}/sentences/")
+        records = []
+        for offset in range(0, len(names), 12):
+            names_in_batch = names[offset : offset + 12]
+            batch = await asyncio.gather(*(self.backend.read(name) for name in names_in_batch))
+            records.extend(json.loads(data) for data in batch if data)
+        return sorted(records, key=lambda record: record["id"])
 
     async def load_day(self, day: str) -> list[dict]:
         records = []

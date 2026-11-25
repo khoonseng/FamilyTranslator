@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ListenerPlayer } from "../audio/listenerPlayer.js";
 import { ClipCache, memoryBackend } from "../lib/clipCache.js";
 import { setListenParts, useListenStore } from "./listen.js";
 
@@ -48,6 +49,78 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe("daily History", () => {
+  it("replays the chosen date while today's clip with the same ID waits", async () => {
+    const output = { play: vi.fn(), stop: vi.fn() };
+    const playback = new ListenerPlayer({
+      output,
+      onChange: () => listen.syncPlayer(),
+      onPlayed: (id) => listen.markPlayed(id),
+    });
+    const day = "2026-12-18";
+    const audio = mp3();
+    const archive = {
+      send: vi.fn(async (type) => {
+        if (type === "history_days_request") return { days: [day] };
+        if (type === "history_clip_request") return { audio };
+        return { sentences: [{ ...sentence(1), yue: "昨日", clip: "ready" }], next_after: null };
+      }),
+    };
+    setListenParts({ player: playback, archive });
+    listen.connection = "connected";
+    listen.openHistory();
+    await listen.openHistoryDay(day);
+
+    listen.receive(sentence(1));
+    listen.receiveClip(1, mp3());
+    expect(listen.player.waiting).toBe(1);
+    expect(output.play).not.toHaveBeenCalled();
+    expect(listen.historySentences[1].yue).toBe("昨日");
+
+    listen.replayHistory([1]);
+    const key = `${day}/1`;
+    expect(output.play).toHaveBeenLastCalledWith(key);
+    expect(await listen.loadHistoryClip(key)).toBe(audio);
+    expect(archive.send).toHaveBeenCalledWith("history_clip_request", { day, sentence_id: 1 });
+    expect(await cache.getClip(day, 1)).toBe(audio);
+    playback.ended(key);
+    listen.closeHistory();
+    expect(listen.sentences[1].played).toBe(false);
+    expect(listen.player.state).toBe("paused");
+    listen.playNew();
+    expect(output.play).toHaveBeenLastCalledWith(1);
+  });
+
+  it("shows cached text and ignores a page that returns after switching dates", async () => {
+    let finishOldPage;
+    const oldPage = new Promise((resolve) => (finishOldPage = resolve));
+    const archive = {
+      send: vi.fn((type, fields) => {
+        if (type === "history_days_request") return Promise.resolve({ days: [] });
+        if (fields.day === "2026-12-17") return oldPage;
+        return Promise.resolve({ sentences: [], next_after: null });
+      }),
+    };
+    const playback = new ListenerPlayer({ output: { play() {}, stop() {} } });
+    setListenParts({ player: playback, archive });
+    listen.connection = "connected";
+    listen.openHistory();
+    const old = listen.openHistoryDay("2026-12-17");
+    await vi.waitFor(() => expect(archive.send).toHaveBeenCalledWith(
+      "history_page_request", { day: "2026-12-17", after: 0 },
+    ));
+
+    const day = "2026-12-18";
+    await cache.putSentence(day, { id: 1, bubbleId: 1, yue: "已儲存" });
+    listen.connection = "offline";
+    await listen.openHistoryDay(day);
+    finishOldPage({ sentences: [{ ...sentence(1), yue: "其他日期" }], next_after: null });
+    await old;
+    expect(listen.historyDate).toBe(day);
+    expect(listen.historySentences[1].yue).toBe("已儲存");
+  });
+});
 
 describe("listener store: joining and catching up", () => {
   it("joining fresh: today's earlier sentences are history, never auto-played", () => {

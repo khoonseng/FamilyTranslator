@@ -26,6 +26,7 @@ import { ListenerPlayer } from "../audio/listenerPlayer.js";
 import { MAX_TALK_S, startRecorder, talkBlock } from "../audio/talk.js";
 import { ClipCache } from "../lib/clipCache.js";
 import { keepScreenOn, store, stored } from "../lib/device.js";
+import { availableHistoryDays, historyBubbles, HistoryRequests } from "../lib/history.js";
 import { text } from "../lib/profile.js";
 import { RoomSocket } from "../lib/roomSocket.js";
 
@@ -35,6 +36,10 @@ let socket = null;
 let player = null;
 let keeper = null;
 let cache = null;
+let archive = null;
+let historyListTurn = 0;
+let historyDayTurn = 0;
+let historyAudioTurn = 0;
 let watching = false; // the page's wake-up listeners, added once
 let historyUpTo = 0; // sentences up to here were said before this phone joined today
 let helloLastId = 0; // what this phone said it had in its last hello
@@ -70,6 +75,7 @@ export function setListenParts(parts) {
   player = parts.player ?? player;
   cache = parts.cache ?? cache;
   keeper = parts.keeper ?? keeper;
+  archive = parts.archive ?? archive;
   makeRecorder = parts.makeRecorder ?? makeRecorder;
   historyUpTo = helloLastId = 0;
   recent.clear();
@@ -130,11 +136,22 @@ export const useListenStore = defineStore("listen", {
     sound: stored("soundOff") !== "1",
     english: stored("english") === "1",
     audioBlocked: false, // the keep-alive was stopped and couldn't restart: "Tap to resume audio"
+    historyOpen: false,
+    historyDates: [],
+    historyDate: "",
+    historyDatesLoading: false,
+    historyDatesError: false,
+    historySentences: {},
+    historyAfter: 0, // 0 starts the day, null means the last page arrived
+    historyLoading: false,
+    historyError: false,
+    historyAudioMissing: false,
   }),
 
   getters: {
     lastId: (s) => Math.max(0, ...Object.keys(s.sentences).map(Number)),
     joinUrl: (s) => (s.joinToken ? `${location.origin}/join#${s.joinToken}` : ""),
+    historyBubbles: (s) => historyBubbles(s.historySentences),
   },
 
   actions: {
@@ -157,7 +174,7 @@ export const useListenStore = defineStore("listen", {
     // on (hard rule 12), then shows the phone's own bubbles and connects.
     async start() {
       const output = new ClipOutput({
-        load: (id) => this.loadClip(id),
+        load: (id) => typeof id === "string" ? this.loadHistoryClip(id) : this.loadClip(id),
         onEnded: (id, ok) => player.ended(id, ok),
         onInterrupted: () => this.setAutoPlay(false),
       });
@@ -187,12 +204,19 @@ export const useListenStore = defineStore("listen", {
       for (const sentence of await cache.loadDay(this.day)) this.addSentence(sentence);
       socket = new RoomSocket({
         hello: () => this.hello(),
-        onStatus: (status) => (this.connection = status),
+        onStatus: (status) => {
+          this.connection = status;
+          if (status !== "connected") archive.disconnect();
+        },
         onReady: (message) => this.ready(message),
         onRefused: (code) => this.refuse(code),
         onMessage: (message) => this.receive(message),
-        onClip: (id, data, header) => this.receiveClip(id, data, header.voice),
+        onClip: (id, data, header) => {
+          if (header.type === "history_clip") archive.receive(header, data);
+          else this.receiveClip(id, data, header.voice);
+        },
       });
+      archive = new HistoryRequests(socket);
       socket.connect();
     },
 
@@ -220,9 +244,15 @@ export const useListenStore = defineStore("listen", {
           socket.sendJson({ type: "clip_request", sentence_id: sentence.id });
         }
       }
+      if (this.historyOpen) {
+        this.refreshHistoryDates();
+        this.loadHistoryPage();
+      }
     },
 
     refuse(code) {
+      this.closeHistory();
+      archive?.disconnect();
       this.refused = code;
       this.screen = this.host ? "credentials" : "start";
       keeper?.stop();
@@ -231,6 +261,8 @@ export const useListenStore = defineStore("listen", {
 
     // Become hub: this page lets go of the room before the hub page takes over.
     leave() {
+      this.closeHistory();
+      archive?.disconnect();
       socket?.close();
       keeper?.stop();
       player?.reset();
@@ -238,6 +270,10 @@ export const useListenStore = defineStore("listen", {
     },
 
     receive(message) {
+      if (message.type.startsWith("history_")) {
+        archive?.receive(message);
+        return;
+      }
       const sentence = this.sentences[message.sentence_id];
       if (message.type === "sentence") {
         const old = this.sentences[message.id];
@@ -357,7 +393,123 @@ export const useListenStore = defineStore("listen", {
       recent.clear();
       refetching.clear();
       historyUpTo = 0;
-      player?.reset();
+      player?.reset({ browsingHistory: this.historyOpen });
+      if (this.historyOpen) this.refreshHistoryDates();
+    },
+
+    // --- History --------------------------------------------------------------------------
+
+    openHistory() {
+      if (this.talking) return;
+      player.pause();
+      this.historyOpen = true;
+      this.refreshHistoryDates();
+    },
+
+    closeHistory() {
+      if (!this.historyOpen) return;
+      this.backToHistoryDates();
+      historyListTurn++;
+      this.historyOpen = false;
+    },
+
+    backToHistoryDates() {
+      this.stopHistoryReplay();
+      historyDayTurn++;
+      this.historyDate = "";
+      this.historySentences = {};
+      this.historyAfter = 0;
+      this.historyLoading = this.historyError = false;
+    },
+
+    async refreshHistoryDates() {
+      const turn = ++historyListTurn;
+      this.historyDatesLoading = true;
+      this.historyDatesError = false;
+      const cached = await cache?.listDays() ?? [];
+      if (turn !== historyListTurn) return;
+      this.historyDates = availableHistoryDays([...this.historyDates, ...cached]);
+      try {
+        if (this.connection === "connected") {
+          const { days } = await archive.send("history_days_request");
+          if (turn === historyListTurn) this.historyDates = availableHistoryDays([...days, ...cached]);
+        }
+      } catch {
+        if (turn === historyListTurn) this.historyDatesError = true;
+      } finally {
+        if (turn === historyListTurn) this.historyDatesLoading = false;
+      }
+    },
+
+    async openHistoryDay(day) {
+      this.backToHistoryDates();
+      const turn = historyDayTurn;
+      this.historyDate = day;
+      this.historyLoading = true;
+      const sentences = await cache?.loadDay(day) ?? [];
+      if (turn !== historyDayTurn) return;
+      for (const sentence of sentences) this.historySentences[sentence.id] = sentence;
+      this.historyLoading = false;
+      await this.loadHistoryPage();
+    },
+
+    async loadHistoryPage() {
+      const day = this.historyDate;
+      if (!day || this.historyLoading || this.historyAfter === null || this.connection !== "connected") return;
+      const turn = historyDayTurn;
+      this.historyLoading = true;
+      this.historyError = false;
+      try {
+        const page = await archive.send("history_page_request", { day, after: this.historyAfter });
+        if (turn !== historyDayTurn) return;
+        for (const { bubble_id, ...record } of page.sentences) {
+          const cached = this.historySentences[record.id];
+          const sentence = { ...cached, ...record, bubbleId: bubble_id };
+          if (cached?.clip === "ready") sentence.clip = "ready";
+          this.historySentences[record.id] = sentence;
+          if (day !== this.day) cache?.putSentence(day, sentence);
+        }
+        this.historyAfter = page.next_after;
+      } catch {
+        if (turn === historyDayTurn) this.historyError = true;
+      } finally {
+        if (turn === historyDayTurn) this.historyLoading = false;
+      }
+    },
+
+    replayHistory(ids) {
+      if (!this.historyDate || !this.sound) return;
+      historyAudioTurn++;
+      this.historyAudioMissing = false;
+      player.replay(ids
+        .filter((id) => this.historySentences[id]?.kind !== "reply"
+          && this.historySentences[id]?.clip === "ready")
+        .map((id) => `${this.historyDate}/${id}`));
+    },
+
+    stopHistoryReplay() {
+      historyAudioTurn++;
+      this.historyAudioMissing = false;
+      player?.pause();
+    },
+
+    async loadHistoryClip(key) {
+      const turn = historyAudioTurn;
+      const [day, id] = key.split("/");
+      const sentence_id = Number(id);
+      const cached = await cache?.getClip(day, sentence_id);
+      if (cached) return cached;
+      if (turn !== historyAudioTurn) return;
+      try {
+        const { audio } = await archive.send("history_clip_request", { day, sentence_id });
+        if (audio) {
+          cache?.putClip(day, sentence_id, audio);
+          return audio;
+        }
+      } catch {
+        // Keep the text and allow another tap when the connection returns.
+      }
+      if (turn === historyAudioTurn) this.historyAudioMissing = true;
     },
 
     // --- taps -----------------------------------------------------------------------------
