@@ -1,4 +1,4 @@
-# One container (CLAUDE.md "Stack"): Node builds the Vue app, then a Python image serves it
+# One container (AGENTS.md "Stack"): Node builds the Vue app, then a Python image serves it
 # alongside the API and the WebSocket. Build context: the repo root (see .dockerignore).
 
 FROM node:24-slim AS frontend

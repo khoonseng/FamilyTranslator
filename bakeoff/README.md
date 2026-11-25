@@ -3,7 +3,7 @@
 Scripts that test the riskiest parts of the design before the app is built: Mandarin STT on a
 fast Chongqing-accented guide, colloquial Cantonese from each translator, the Cantonese voices,
 time-to-first-audio, and iPhone playback with the screen locked. Never shipped with the app.
-The plan and its questions come from `CLAUDE.md` ("Build phases") and `docs/architecture.md`.
+The plan and its questions come from `AGENTS.md` ("Build phases") and `docs/architecture.md`.
 
 ## Setup
 

@@ -2,7 +2,7 @@
 # Deploys a translator service to Cloud Run in us-central1 (hard rule 2). With no settings, the
 # live chongqing-translator service with the Chongqing language profile, exactly as before.
 #
-#   ./deploy.sh            build and deploy (scales to zero; see CLAUDE.md for 15-23 Dec)
+#   ./deploy.sh            build and deploy (scales to zero; see AGENTS.md for 15-23 Dec)
 #   ./deploy.sh --secrets  create or update the 4 secrets from backend/.env (asks first)
 #   ./deploy.sh --bucket   create the clip bucket once: private, 30-day delete, no soft delete
 #

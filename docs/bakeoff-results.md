@@ -8,7 +8,7 @@ tested the riskiest parts of the design: Mandarin speech-to-text on fast, accent
 colloquial Cantonese from each translator, the Cantonese voice, time-to-first-audio and iPhone
 playback with the screen locked. This page holds metrics only. Recordings, transcripts and
 translations stay in `bakeoff/out/` on the laptop and are never committed. The decisions
-themselves live in `docs/architecture.md` and the Decisions log in `CLAUDE.md`.
+themselves live in `docs/architecture.md` and the Decisions log in `docs/decisions.md`.
 
 ## Summary
 

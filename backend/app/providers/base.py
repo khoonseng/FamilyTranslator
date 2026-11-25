@@ -27,7 +27,7 @@ class TokenUsage:
 @dataclass
 class Translation:
     """`speech` is what the voice says, ready as soon as it is complete so TTS can start; `other`
-    follows (CLAUDE.md "Architecture in brief", item 3).
+    follows (AGENTS.md "Architecture in brief", item 3).
     - Guide → family: `speech` is the Cantonese (`yue`), `other` the English.
     - A family reply → guide (phase 2): `speech` is the Mandarin (`zh_hans`), `other` the
       family's other language (English for Cantonese speech, Cantonese for English)."""

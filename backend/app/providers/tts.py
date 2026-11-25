@@ -1,4 +1,4 @@
-"""Google Text-to-Speech: Cantonese MP3, one non-streaming request per sentence (CLAUDE.md
+"""Google Text-to-Speech: Cantonese MP3, one non-streaming request per sentence (AGENTS.md
 "Stack"). Voices in config order: Despina, then the older Standard-A (hard rule 6). Normal
 speed, never sped up (hard rule 11).
 
