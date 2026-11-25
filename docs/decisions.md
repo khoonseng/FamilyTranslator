@@ -319,6 +319,15 @@ decision is made, add it here and update `docs/architecture.md` in the same chan
   Noted, no action yet: since 12 Nov Gemini missed its 2.5 s deadline on 32 of 98 sentences
   (31 went to Qwen, 1 to gpt-oss after a Qwen 429), so the Groq upgrade matters more. Next:
   prepare the family field test.
+- 2026-11-14 — Part C rehearsal, a finding, not a decision (owner alone, 11:43–11:54 SGT; the
+  hub on the iPhone's own mic, the DJI not connected, no family phones; recorded here on
+  2026-11-25 from Claude's notes). Run 1: 6 VAD segments in 4 min; 4 chatter bubbles got
+  through as fluent Mandarin with 0% Cantonese-only characters, and none was dropped, so
+  junk-filter layer 2 could not have caught them at any threshold. Run 2: 0 segments in 3 min.
+  The hub's input audio isn't saved, so the runs can't be replayed. This undermines layer 2's
+  premise (that Chirp 3 in Guide mode keeps chatter recognisably Cantonese), as the week-1
+  echo test already hinted, and leaves the close clip-on (layer 1) as the main defence. The
+  family field test (part C, with the DJI in use) settles it; no change to the filter yet.
 - 2026-11-23 — Language profiles (owner decisions): the language pair is a deploy-time setting
   (`PROFILE`), and a second Cloud Run service, `cantonese-guide-translator`, runs the pair
   swapped: a Cantonese guide; a family that hears Mandarin, reads Simplified Chinese and replies
@@ -335,3 +344,13 @@ decision is made, add it here and update `docs/architecture.md` in the same chan
   (rollback: 00016-6pb). `cantonese-guide-translator` (revision 00002, bucket
   `familytranslator-cg-clips`) passed the owner's device test. Still open for that profile:
   its glossary, junk-filter layer 2 and a translation-quality check.
+- 2026-11-25 — The coding assistant moves from Claude Code to OpenAI Codex (owner decision).
+  `CLAUDE.md` becomes `AGENTS.md` (Codex reads that file, and by default only its first
+  32 KiB), and this Decisions log moves out of it into `docs/decisions.md`; the handoff is
+  `docs/handoff-claude-to-codex.md`. The app itself is unchanged (it never used Anthropic).
+  Notes that lived only in Claude's private memory are now in the repo: the 14 Nov part C
+  rehearsal (above); the working agreement's step-by-step approval, asking before deploys and
+  `gcloud` changes, plain language, and not re-proposing declined options (e.g. stronger echo
+  detection); the suspected cause of the one stuck "Reconnecting…" on a locked iPhone (27 Oct):
+  a WebSocket left connecting with no timeout (not yet checked); and no native iOS app, since
+  there is no Mac (it would need a cloud build and the US$99 developer fee).
